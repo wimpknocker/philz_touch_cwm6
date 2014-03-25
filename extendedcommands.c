@@ -1728,8 +1728,7 @@ int show_advanced_menu() {
 #endif
 
 #ifdef ENABLE_BLACKHAWK_PATCH
-        struct stat st;
-        if (0 == stat("/res/misc/tool.zip", &st) && !is_second_recovery())
+        if (file_found("/res/misc/tool.zip") && !is_second_recovery())
             list[6] = "Run Aroma Dual Boot Tool";
         else
             list[6] = NULL;
