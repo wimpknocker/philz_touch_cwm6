@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 The Android Open Source Project
+ * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,8 @@
 int reboot_main(int argc, char *argv[])
 {
     int ret;
-    size_t prop_len;
-    char property_val[PROPERTY_VALUE_MAX];
-    const char *cmd = "reboot";
-    char *optarg = "";
+    int poweroff = 0;
+    int flags = 0;
 
     opterr = 0;
     do {
@@ -41,7 +39,7 @@ int reboot_main(int argc, char *argv[])
 
         switch (c) {
         case 'p':
-            cmd = "shutdown";
+            poweroff = 1;
             break;
         case '?':
             fprintf(stderr, "usage: %s [-p] [rebootcommand]\n", argv[0]);
@@ -54,16 +52,12 @@ int reboot_main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    if (argc > optind)
-        optarg = argv[optind];
-
-    prop_len = snprintf(property_val, sizeof(property_val), "%s,%s", cmd, optarg);
-    if (prop_len >= sizeof(property_val)) {
-        fprintf(stderr, "reboot command too long: %s\n", optarg);
-        exit(EXIT_FAILURE);
-    }
-
-    ret = property_set(ANDROID_RB_PROPERTY, property_val);
+    if(poweroff)
+        ret = android_reboot(ANDROID_RB_POWEROFF, flags, 0);
+    else if(argc > optind)
+        ret = android_reboot(ANDROID_RB_RESTART2, flags, argv[optind]);
+    else
+        ret = android_reboot(ANDROID_RB_RESTART, flags, 0);
     if(ret < 0) {
         perror("reboot");
         exit(EXIT_FAILURE);
