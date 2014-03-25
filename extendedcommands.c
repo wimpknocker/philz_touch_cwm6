@@ -1474,8 +1474,7 @@ void format_sdcard(const char* volume) {
         case 1:
         case 2:
         case 3:
-        case 4:
-        case 5: {
+        case 4: {
             if (fs_mgr_is_voldmanaged(v)) {
                 ret = vold_custom_format_volume(v->mount_point, list[chosen_item], 1) == CommandOkay ? 0 : -1;
             } else if (strcmp(list[chosen_item], "vfat") == 0) {
@@ -1501,8 +1500,8 @@ void format_sdcard(const char* volume) {
             }
             break;
         }
-        case 6:
-        case 7: {
+        case 5:
+        case 6: {
             // workaround for new vold managed volumes that cannot be recognized by prebuilt ext2/ext3 bins
             const char *device = v->blk_device2;
             if (device == NULL)
