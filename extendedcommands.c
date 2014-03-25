@@ -1451,6 +1451,9 @@ void format_sdcard(const char* volume) {
                             "ext4",
                             "ext3",
                             "ext2",
+#ifdef USE_F2FS
+                            "f2fs",
+#endif
                             NULL };
 
     int ret = -1;
@@ -1501,6 +1504,17 @@ void format_sdcard(const char* volume) {
             ret = format_unknown_device(device, v->mount_point, list[chosen_item]);
             break;
         }
+#ifdef USE_F2FS
+        case 7: {
+            if (fs_mgr_is_voldmanaged(v)) {
+                ret = vold_custom_format_volume(v->mount_point, "f2fs", 1) == CommandOkay ? 0 : -1;
+            } else {
+                sprintf(cmd, "/sbin/mkfs.f2fs %s", v->blk_device);
+                ret = __system(cmd);
+            }
+            break;
+        }
+#endif
     }
 
     if (ret)
