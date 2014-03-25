@@ -1447,9 +1447,6 @@ void format_sdcard(const char* volume) {
     static char* list[] = { "default",
                             "vfat",
                             "exfat",
-#ifdef USE_F2FS
-                            "f2fs",
-#endif
                             "ntfs",
                             "ext4",
                             "ext3",
@@ -1483,11 +1480,6 @@ void format_sdcard(const char* volume) {
             } else if (strcmp(list[chosen_item], "exfat") == 0) {
                 sprintf(cmd, "/sbin/mkfs.exfat %s", v->blk_device);
                 ret = __system(cmd);
-#ifdef USE_F2FS
-            } else if (strcmp(list[chosen_item], "f2fs") == 0) {
-                sprintf(cmd, "/sbin/mkfs.f2fs %s", v->blk_device);
-                ret = __system(cmd);
-#endif
             } else if (strcmp(list[chosen_item], "ntfs") == 0) {
                 sprintf(cmd, "/sbin/mkntfs -f %s", v->blk_device);
                 ret = __system(cmd);
