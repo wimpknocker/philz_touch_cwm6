@@ -1125,7 +1125,7 @@ int show_partition_menu() {
 
 #if defined(USE_F2FS) && defined(ENABLE_BLACKHAWK_PATCH)
             if ((strcmp(e->type, "ext4") == 0 || strcmp(e->type, "f2fs") == 0) &&
-	            strcmp(e->path, "/data") != 0) {
+                    strcmp(e->path, "/data") != 0) {
                 format_ext4_or_f2fs(e->path);
                 continue;
             }
