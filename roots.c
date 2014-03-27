@@ -265,6 +265,7 @@ int try_mount(const char* device, const char* mount_point, const char* fs_type, 
     if (device == NULL || mount_point == NULL || fs_type == NULL)
         return -1;
     int ret = 0;
+#ifndef ENABLE_BLACKHAWK_PATCH
     if (fs_options == NULL) {
         ret = mount(device, mount_point, fs_type,
                        MS_NOATIME | MS_NODEV | MS_NODIRATIME, "");
@@ -275,6 +276,13 @@ int try_mount(const char* device, const char* mount_point, const char* fs_type, 
         sprintf(mount_cmd, "mount -t %s -o%s %s %s", fs_type, fs_options, device, mount_point);
         ret = __system(mount_cmd);
     }
+#else
+    if (fs_options == NULL)
+        fs_options = "noatime,nodev,nodiratime";
+    char mount_cmd[PATH_MAX];
+    sprintf(mount_cmd, "mount -t %s -o%s %s %s", fs_type, fs_options, device, mount_point);
+    ret = __system(mount_cmd);
+#endif
     if (ret == 0)
         return 0;
     LOGW("failed to mount %s %s %s (%s)\n", device, mount_point, fs_type, strerror(errno));
