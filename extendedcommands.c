@@ -84,17 +84,21 @@ int get_filtered_menu_selection(const char** headers, char** items, int menu_onl
     return ret;
 }
 
-void write_string_to_file(const char* filename, const char* string) {
-    ensure_path_mounted(filename);
+int write_string_to_file(const char* filename, const char* string) {
     char tmp[PATH_MAX];
+    int ret = -1;
+
+    ensure_path_mounted(filename);
     sprintf(tmp, "mkdir -p $(dirname %s)", filename);
     __system(tmp);
     FILE *file = fopen(filename, "w");
     if (file != NULL) {
-        fprintf(file, "%s", string);
+        ret = fprintf(file, "%s", string);
         fclose(file);
     } else
         LOGE("Cannot write to %s\n", filename);
+
+    return ret;
 }
 
 void write_recovery_version() {
@@ -155,16 +159,16 @@ static void toggle_loki_support() {
 // this is called when we load recovery settings
 // it is needed when after recovery is booted, user wipes /data, then he installs a ROM: we can still return the user setting 
 int loki_support_enabled() {
-    char device_supports_loki[PROPERTY_VALUE_MAX];
+    char no_loki_variant[PROPERTY_VALUE_MAX];
     int ret = -1;
 
-    property_get("ro.loki_enabled", device_supports_loki, "0");
-    if (strcmp(device_supports_loki, "1") == 0) {
+    property_get("ro.loki_disabled", no_loki_variant, "0");
+    if (strcmp(no_loki_variant, "0") == 0) {
         // device variant supports loki: check if user enabled it
         // if there is no settings file (read_config_file() < 0), it could be we have wiped /data before installing zip
         // in that case, return current value (we last loaded on start or when user last set it) and not default
-        if (read_config_file(PHILZ_SETTINGS_FILE, apply_loki_patch.key, device_supports_loki, "1") >= 0) {
-            if (strcmp(device_supports_loki, "false") == 0 || strcmp(device_supports_loki, "0") == 0)
+        if (read_config_file(PHILZ_SETTINGS_FILE, apply_loki_patch.key, no_loki_variant, "0") >= 0) {
+            if (strcmp(no_loki_variant, "true") == 0 || strcmp(no_loki_variant, "1") == 0)
                 apply_loki_patch.value = 0;
             else
                 apply_loki_patch.value = 1;
@@ -307,8 +311,7 @@ void free_string_array(char** array) {
     free(array);
 }
 
-char** gather_files(const char* directory, const char* fileExtensionOrDirectory, int* numFiles) {
-    char path[PATH_MAX] = "";
+char** gather_files(const char* basedir, const char* fileExtensionOrDirectory, int* numFiles) {
     DIR *dir;
     struct dirent *de;
     int total = 0;
@@ -316,7 +319,15 @@ char** gather_files(const char* directory, const char* fileExtensionOrDirectory,
     char** files = NULL;
     int pass;
     *numFiles = 0;
-    int dirLen = strlen(directory);
+    int dirLen = strlen(basedir);
+    char directory[PATH_MAX];
+
+    // Append a trailing slash if necessary
+    strcpy(directory, basedir);
+    if (directory[dirLen - 1] != '/') {
+        strcat(directory, "/");
+        ++dirLen;
+    }
 
     dir = opendir(directory);
     if (dir == NULL) {
@@ -328,7 +339,6 @@ char** gather_files(const char* directory, const char* fileExtensionOrDirectory,
     if (fileExtensionOrDirectory != NULL)
         extension_length = strlen(fileExtensionOrDirectory);
 
-    int isCounting = 1;
     i = 0;
     for (pass = 0; pass < 2; pass++) {
         while ((de = readdir(dir)) != NULL) {
@@ -401,7 +411,7 @@ char** gather_files(const char* directory, const char* fileExtensionOrDirectory,
             int curMax = -1;
             int j;
             for (j = 0; j < total - i; j++) {
-                if (curMax == -1 || strcmp(files[curMax], files[j]) < 0)
+                if (curMax == -1 || strcmpi(files[curMax], files[j]) < 0)
                     curMax = j;
             }
             char* temp = files[curMax];
@@ -551,18 +561,20 @@ void show_nandroid_delete_menu(const char* volume_path) {
     }
 
     static const char* headers[] = { "Choose a backup to delete", NULL };
+    char path[PATH_MAX];
     char tmp[PATH_MAX];
+    char* file;
 
     if (twrp_backup_mode.value) {
         char device_id[PROPERTY_VALUE_MAX];
         get_device_id(device_id);
-        sprintf(tmp, "%s/%s/%s", volume_path, TWRP_BACKUP_PATH, device_id);
+        sprintf(path, "%s/%s/%s", volume_path, TWRP_BACKUP_PATH, device_id);
     } else {
-        sprintf(tmp, "%s/%s", volume_path, CWM_BACKUP_PATH);    
+        sprintf(path, "%s/%s", volume_path, CWM_BACKUP_PATH);    
     }
 
     for(;;) {
-        char* file = choose_file_menu(tmp, NULL, headers);
+        file = choose_file_menu(path, NULL, headers);
         if (file == NULL)
             return;
 
