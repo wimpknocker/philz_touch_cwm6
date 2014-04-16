@@ -1696,9 +1696,6 @@ int show_advanced_menu() {
 #ifdef ENABLE_LOKI
     list[5] = NULL;
 #endif
-#ifdef ENABLE_BLACKHAWK_PATCH
-    list[6] = NULL;
-#endif
 
     char list_prefix[] = "Partition ";
     if (can_partition(primary_path)) {
@@ -1738,13 +1735,6 @@ int show_advanced_menu() {
                 ui_format_gui_menu(item_loki_toggle_menu, "Apply Loki Patch", "( )");
             list[5] = item_loki_toggle_menu;
         }
-#endif
-
-#ifdef ENABLE_BLACKHAWK_PATCH
-        if (file_found("/res/misc/tool.zip") && !is_second_recovery())
-            list[6] = "Run Aroma Dual Boot Tool";
-        else
-            list[6] = NULL;
 #endif
 
         chosen_item = get_filtered_menu_selection(headers, list, 0, 0, sizeof(list) / sizeof(char*));
@@ -1806,11 +1796,6 @@ int show_advanced_menu() {
 #ifdef ENABLE_LOKI
             case 5:
                 toggle_loki_support();
-                break;
-#endif
-#ifdef ENABLE_BLACKHAWK_PATCH
-            case 6:
-                __system("aroma 1 0 /res/misc/tool.zip");
                 break;
 #endif
             default:
