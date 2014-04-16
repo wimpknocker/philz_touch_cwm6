@@ -1727,6 +1727,11 @@ int show_advanced_menu() {
     list[index_loki] = NULL;
 #endif
 
+#ifdef ENABLE_BLACKHAWK_PATCH
+    int index_dbtool = list_index++;
+    list[index_dbtool] = NULL;
+#endif
+
     char list_prefix[] = "Partition ";
     if (can_partition(primary_path)) {
         sprintf(buf, "%s%s", list_prefix, primary_path);
@@ -1775,6 +1780,13 @@ int show_advanced_menu() {
                 ui_format_gui_menu(item_loki_toggle_menu, "Apply Loki Patch", "( )");
             list[index_loki] = item_loki_toggle_menu;
         }
+#endif
+
+#ifdef ENABLE_BLACKHAWK_PATCH
+        if (file_found("/res/misc/tool.zip") && !is_second_recovery())
+            list[index_dbtool] = "Run Aroma Dual Boot Tool";
+        else
+            list[index_dbtool] = NULL;
 #endif
 
         chosen_item = get_filtered_menu_selection(headers, list, 0, 0, sizeof(list) / sizeof(char*));
@@ -1850,6 +1862,13 @@ int show_advanced_menu() {
                 toggle_loki_support();
                 break;
             }
+#endif
+
+#ifdef ENABLE_BLACKHAWK_PATCH
+            if (chosen_item == index_dbtool) {
+                __system("aroma 1 0 /res/misc/tool.zip");
+                break;
+	    }
 #endif
             partition_sdcard(list[chosen_item] + strlen(list_prefix));
             break;
