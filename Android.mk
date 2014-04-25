@@ -10,7 +10,11 @@ ifdef PHILZ_TOUCH_RECOVERY
 ifdef USE_PREBUILT_LIBTOUCH_GUI
 include $(CLEAR_VARS)
 MY_LOCAL_PATH := $(LOCAL_PATH)
-LOCAL_PREBUILT_LIBS := libtouch_gui/libtouch_gui.a
+ifeq ($(TARGET_CPU_VARIANT),arm11)
+    LOCAL_PREBUILT_LIBS := libtouch_gui/armv6/libtouch_gui.a
+else
+    LOCAL_PREBUILT_LIBS := libtouch_gui/libtouch_gui.a
+endif
 include $(BUILD_MULTI_PREBUILT)
 LOCAL_PATH := $(MY_LOCAL_PATH)
 endif
@@ -70,7 +74,7 @@ endif
 # This should be the same line as upstream to not break makerecoveries.sh
 RECOVERY_VERSION := $(RECOVERY_NAME) v6.0.4.8
 
-PHILZ_BUILD := 6.27.5
+PHILZ_BUILD := 6.27.6
 CWM_BASE_VERSION := $(shell echo $(RECOVERY_VERSION) | cut -d ' ' -f 3)
 LOCAL_CFLAGS += -DCWM_BASE_VERSION="$(CWM_BASE_VERSION)"
 
