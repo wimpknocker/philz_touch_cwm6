@@ -1,10 +1,32 @@
+/*
+    PhilZ Touch - touch_gui library
+    Copyright (C) <2014>  <phytowardt@gmail.com>
+
+    This file is part of PhilZ Touch Recovery
+
+    PhilZ Touch is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    PhilZ Touch is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with PhilZ Touch.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
+
 // PhilZ Touch config file
 
 #ifndef __ADVANCED_FUNCTIONS_H
 #define __ADVANCED_FUNCTIONS_H
 
 
-#include "ui_defines.h"
+#include "ui_defines.h" // MENU_MAX_COLS, CHAR_HEIGHT, CHAR_WIDTH
 
 // format toggle menus to screen width
 // used to format toggle menus to device screen width (only touch build)
@@ -53,6 +75,7 @@ void ensure_directory(const char* dir); // in nandroid.c
 int is_path_ramdisk(const char* path);
 int copy_a_file(const char* file_in, const char* file_out);
 int append_string_to_file(const char* filename, const char* string);
+char* find_file_in_path(const char* dir, const char* filename, int depth, int follow);
 char* read_file_to_buffer(const char* filepath, unsigned long *len);
 char* BaseName(const char* path);
 char* DirName(const char* path);

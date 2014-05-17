@@ -1,3 +1,24 @@
+/*
+    PhilZ Touch - touch_gui library
+    Copyright (C) <2014>  <phytowardt@gmail.com>
+
+    This file is part of PhilZ Touch Recovery
+
+    PhilZ Touch is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    PhilZ Touch is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with PhilZ Touch.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -49,6 +70,7 @@
 #include "voldclient/voldclient.h"
 
 #include "adb_install.h"
+#include "libcrecovery/common.h" // __popen/__pclose
 
 // md5 display
 #include <pthread.h>
@@ -129,6 +151,10 @@ long long timenow_msec() {
     return (long long)(nseconds / 1000000ULL);
 }
 
+// check if a specified time interval is passed between 2 calls to this function
+// before calling, reset timer by passing 0
+// when timer reached, it will return 1 AND will reset the timer
+// next call will start again from that point without needing to pass 0 to reset
 static long long interval_passed_t_timer = 0;
 int is_time_interval_passed(long long msec_interval) {
     long long t = timenow_msec();
@@ -162,6 +188,8 @@ void ui_print_custom_logtail(const char* filename, int nb_lines) {
 
 // basename and dirname implementation that is thread safe, no free and doesn't modify argument
 // it is extracted from NDK and modified dirname_r to never modify passed argument
+// t_BaseName and t_DirName are threadsafe, but need free by caller
+// todo: add error check when returning NULL as it will segfault
 int BaseName_r(const char* path, char*  buffer, size_t  bufflen) {
     const char *endp, *startp;
     int len, result;
@@ -212,6 +240,7 @@ Exit:
     return result;
 }
 
+// thread unsafe
 char* BaseName(const char* path) {
     static char* bname = NULL;
     int ret;
@@ -283,6 +312,7 @@ Exit:
     return result;
 }
 
+// thread unsafe
 char* DirName(const char* path) {
     static char*  bname = NULL;
     int ret;
@@ -350,6 +380,40 @@ int strcmpi(const char *str1, const char *str2) {
 void delete_a_file(const char* filename) {
     ensure_path_mounted(filename);
     remove(filename);
+}
+
+// search for 'file' in 'dir': only last occurrence is returned if many!
+// depth <= 0: no depth limit
+// follow != 0: follow links
+char* find_file_in_path(const char* dir, const char* filename, int depth, int follow) {
+    FILE *fp;
+    char* ret = NULL;
+    char buff[PATH_MAX];
+    char cmd[PATH_MAX];
+    char suffix[2] = "";
+    char options[64] = "";
+    if (dir[strlen(dir) - 1] != '/')
+        strcpy(suffix, "/");
+    if (depth > 0)
+        sprintf(options, " -maxdepth %d", depth);
+    if (follow)
+        strcat(options, " -follow");
+
+    sprintf(cmd, "find %s%s%s -name '%s'", dir, suffix, options, filename);
+    fp = __popen(cmd, "r");
+    if (fp == NULL){
+        return ret;
+    }
+
+    while (fgets(buff, sizeof(buff), fp) != NULL) {
+        size_t len = strlen(buff);
+        if (buff[len - 1] == '\n')
+            buff[len - 1] = '\0';
+        ret = strdup(buff);
+    }
+
+    __pclose(fp);
+    return ret;
 }
 
 // check if file or folder exists
@@ -451,6 +515,7 @@ int append_string_to_file(const char* filename, const char* string) {
 }
 
 // get file size (by Dees_Troy - TWRP)
+// needs ensure_path_mounted(Path) by caller
 unsigned long Get_File_Size(const char* Path) {
     struct stat st;
     if (stat(Path, &st) != 0)
@@ -463,6 +528,8 @@ unsigned long long Total_Size = 0; // Overall size of the partition
 unsigned long long Used_Size = 0; // Overall used space
 unsigned long long Free_Size = 0; // Overall free space
 
+// this needs the volume to be mounted by caller
+// do not ensure path mounted here to avoid time loss when refreshing backup size during nandroid operations
 int Get_Size_Via_statfs(const char* Path) {
     struct statfs st;
     Volume* volume;
@@ -642,6 +709,9 @@ int Find_Partition_Size(const char* Path) {
 //----- End partition size
 
 // get folder size (by Dees_Troy - TWRP)
+// size of /data will include /data/media, so needs to be calculated by caller
+// always ensure_path_mounted(Path) before calling it
+// do not ensure_path_mounted(Path) here to avoid calling it on each opendir(subfolder)
 unsigned long long Get_Folder_Size(const char* Path) {
     DIR* d;
     struct dirent* de;
@@ -680,13 +750,29 @@ unsigned long long Get_Folder_Size(const char* Path) {
     return dusize;
 }
 
+/*
+Read a file to buffer: buffer must be freed by caller if return value is not NULL.
+len is the total bytes we read if successful
+That way we can use fwrite(str, len, fd) to copy the file
+To use it as string argument, we must add terminating null by caller: buffer[len] = '\0';
+Exp:
+    unsigned long len = 0;
+    char* buffer = read_file_to_buffer(md5file, &len);
+    if (buffer != NULL) {
+        printf("buffer=%s\n", buffer);
+        free(buffer);
+    }
+*/
 char* read_file_to_buffer(const char* filepath, unsigned long *len) {
     if (!file_found(filepath)) {
         LOGE("read_file_to_buffer: '%s' not found\n", filepath);
         return NULL;
     }
 
+    // obtain file size:
     unsigned long size = Get_File_Size(filepath);
+
+    // allocate memory to contain the whole file:
     char* buffer = (char*)malloc(size + 1);
     if (buffer == NULL) {
         LOGE("read_file_to_buffer: memory error\n");
@@ -700,6 +786,7 @@ char* read_file_to_buffer(const char* filepath, unsigned long *len) {
         return NULL;
     }
 
+    // copy the file into the buffer:
     *len = fread(buffer, 1, size, file);
     if (size != *len) {
         LOGE("read_file_to_buffer: read error\n");
@@ -719,6 +806,15 @@ char* read_file_to_buffer(const char* filepath, unsigned long *len) {
 /*              by                */
 /*    bigbiff/Dees_Troy TeamWin   */
 /**********************************/
+
+// calculate md5sum of filepath
+// return 0 on success, 1 if cancelled by user, -1 on failure to open source file
+// fills md5sum char array with the resulting md5sum
+// functions calling this should first set the progress bar:
+//    ui_reset_progress();
+//    ui_show_progress(1, 0);
+// and after it is done, reset the progress bar
+//    ui_reset_progress();
 static int cancel_md5digest = 0;
 static int computeMD5(const char* filepath, char *md5sum) {
     struct MD5Context md5c;
@@ -766,6 +862,9 @@ static int computeMD5(const char* filepath, char *md5sum) {
     return cancel_md5digest;
 }
 
+// write calculated md5 to file or to log/screen if md5file is NULL
+// returns negative value on failure or total number of bytes written on success (or 0 if only display md5)
+// if cancelled by user in thread mode, it returns 1
 int write_md5digest(const char* filepath, const char* md5file, int append) {
     int ret;
     char md5sum[PATH_MAX];
@@ -791,6 +890,8 @@ int write_md5digest(const char* filepath, const char* md5file, int append) {
     return ret;
 }
 
+// verify md5sum of filepath if it matches content from md5file
+// if md5file == NULL, we try filepath.md5
 int verify_md5digest(const char* filepath, const char* md5file) {
     char md5file2[PATH_MAX];
     int ret = -1;
@@ -807,12 +908,17 @@ int verify_md5digest(const char* filepath, const char* md5file) {
     }
 
     // read md5 sum from md5file2
+    // read_file_to_buffer() will call file_found() function
     unsigned long len = 0;
     char* md5read = read_file_to_buffer(md5file2, &len);
     if (md5read == NULL)
         return ret;
     md5read[len] = '\0';
 
+    // calculate md5sum of filepath and check if it matches what we read from md5file2
+    // computeMD5() != 0 if cancelled by user in multi-threading mode (1) or if file not found (-1)
+    // file.md5 is formatted like (new line at end):
+    // 264c7c1e6f682cb99a07c283117f7f07  test_code.c\n
     char md5sum[PATH_MAX];
     if (0 == (ret = computeMD5(filepath, md5sum))) {
         char* b = t_BaseName(filepath);
@@ -831,6 +937,7 @@ int verify_md5digest(const char* filepath, const char* md5file) {
     return ret;
 }
 
+// thread function called when installing zip files from menu
 pthread_t tmd5_display;
 pthread_t tmd5_verify;
 static void *md5_display_thread(void *arg) {
@@ -853,6 +960,7 @@ static void *md5_verify_thread(void *arg) {
     ret = verify_md5digest(filepath, NULL);
     ui_reset_progress();
 
+    // ret == 1 if cancelled by user: do not log
     if (ret < 0) {
 #ifdef PHILZ_TOUCH_RECOVERY
         ui_print_preset_colors(1, "red");
@@ -870,10 +978,14 @@ static void *md5_verify_thread(void *arg) {
 
 void start_md5_display_thread(char* filepath) {
     // ensure_path_mounted() is not thread safe, we must disable it when starting a thread for md5 checks
+    // to install the zip file, we must re-enable the ensure_path_mounted() function: it is done when stopping the thread
+    // at this point, filepath should be mounted by caller
     // we ensure primary storage is also mounted as it is needed by confirm_install() function
     ensure_path_mounted(get_primary_storage_path());
     set_ensure_mount_always_true(1);
 
+    // show the message in color (cyan by default)
+    // we will reset color before exiting the thread
 #ifdef PHILZ_TOUCH_RECOVERY
     ui_print_preset_colors(1, NULL);
 #endif
@@ -896,10 +1008,14 @@ void stop_md5_display_thread() {
 
 void start_md5_verify_thread(char* filepath) {
     // ensure_path_mounted() is not thread safe, we must disable it when starting a thread for md5 checks
+    // to install the zip file, we must re-enable the ensure_path_mounted() function: it is done when stopping the thread
+    // at this point, filepath should be mounted by caller
     // we ensure primary storage is also mounted as it is needed by confirm_install() function
     ensure_path_mounted(get_primary_storage_path());
     set_ensure_mount_always_true(1);
 
+    // show the message in color (cyan by default)
+    // we will reset color before exiting the thread
 #ifdef PHILZ_TOUCH_RECOVERY
     ui_print_preset_colors(1, NULL);
 #endif
@@ -928,6 +1044,7 @@ void stop_md5_verify_thread() {
 /**********************************/
 // todo: parse settings file in one pass and make pairs of key:value
 // get value of key from a given config file
+// always call with value[PROPERTY_VALUE_MAX] to prevent any buffer overflow caused by strcpy(value, strstr(line, "=") + 1);
 int read_config_file(const char* config_file, const char *key, char *value, const char *value_def) {
     int ret = 0;
     char line[PROPERTY_VALUE_MAX];
@@ -936,6 +1053,7 @@ int read_config_file(const char* config_file, const char *key, char *value, cons
     if (fp != NULL) {
         while (fgets(line, sizeof(line), fp) != NULL) {
             if (strstr(line, key) != NULL && strncmp(line, key, strlen(key)) == 0 && line[strlen(key)] == '=') {
+                // we found the key: try to get its value, remove trailing \n and ensure it is not an empty value
                 strcpy(value, strstr(line, "=") + 1);
                 if (value[strlen(value)-1] == '\n')
                     value[strlen(value)-1] = '\0';
@@ -946,6 +1064,7 @@ int read_config_file(const char* config_file, const char *key, char *value, cons
                 }
             }
         }
+        // either we didn't find the key or it has an empty value
         ret = 1;
         fclose(fp);
     } else {
@@ -953,6 +1072,7 @@ int read_config_file(const char* config_file, const char *key, char *value, cons
         ret = -1;
     }
 
+    // set value to default
     strcpy(value, value_def);
     LOGI("%s set to default (%s)\n", key, value_def);
     return ret;
@@ -1194,6 +1314,9 @@ void show_multi_flash_menu() {
 /*  Enhanced by PhilZ @xda               */
 /*****************************************/
 
+// check ors and extendedcommand boot scripts at boot (called from recovery.c)
+// verifies that the boot script exists
+// if found, try to edit the boot script file to fix paths in scripts generated by GooManager, ROM Manager or user
 int check_boot_script_file(const char* boot_script) {
     if (!file_found(boot_script))
         return -1;
@@ -1210,6 +1333,8 @@ int check_boot_script_file(const char* boot_script) {
     return 0;
 }
 
+// run ors script on boot (called from recovery.c)
+// this must be called after check_boot_script_file()
 int run_ors_boot_script() {
     int ret = 0;
     char tmp[PATH_MAX];
@@ -1217,6 +1342,7 @@ int run_ors_boot_script() {
     if (!file_found(ORS_BOOT_SCRIPT_FILE))
         return -1;
 
+    // move formatted ors boot script to /tmp and run it from there
     sprintf(tmp, "cp -f %s /tmp/%s", ORS_BOOT_SCRIPT_FILE, BaseName(ORS_BOOT_SCRIPT_FILE));
     __system(tmp);
     remove(ORS_BOOT_SCRIPT_FILE);
@@ -1641,7 +1767,7 @@ int run_ors_script(const char* ors_script) {
 }
 
 //show menu: select ors from default path
-static int browse_for_file = 1;
+static int browse_for_file = 1; // 0 == stop browsing default file locations
 static void choose_default_ors_menu(const char* volume_path) {
     if (ensure_path_mounted(volume_path) != 0) {
         LOGE("Can't mount %s\n", volume_path);
@@ -1782,6 +1908,7 @@ static void format_filename(char *valid_path, int max_len) {
 }
 
 // get rom_name function
+// always call with rom_name[PROPERTY_VALUE_MAX]
 #define MAX_ROM_NAME_LENGTH 31
 void get_rom_name(char *rom_name) {
     const char *rom_id_key[] = { "ro.modversion", "ro.romversion", "ro.build.display.id", NULL };
@@ -1880,6 +2007,9 @@ void misc_nandroid_menu() {
     char item_prompt_low_space[MENU_MAX_COLS];
     char item_ors_path[MENU_MAX_COLS];
     char item_compress[MENU_MAX_COLS];
+#ifdef BOARD_RECOVERY_USE_BBTAR
+    char item_secontext[MENU_MAX_COLS];
+#endif
 
     char* list[] = {
         item_md5,
@@ -1893,6 +2023,9 @@ void misc_nandroid_menu() {
         item_compress,
         "Default Backup Format...",
         "Regenerate md5 Sum",
+#ifdef BOARD_RECOVERY_USE_BBTAR
+        item_secontext,
+#endif
         NULL
     };
 
@@ -1900,6 +2033,11 @@ void misc_nandroid_menu() {
     char* primary_path = get_primary_storage_path();
     char hidenandprogress_file[PATH_MAX];
     sprintf(hidenandprogress_file, "%s/%s", primary_path, NANDROID_HIDE_PROGRESS_FILE);
+#ifdef BOARD_RECOVERY_USE_BBTAR
+    int nandroid_secontext;
+    char ignore_nand_secontext_file[PATH_MAX];
+    sprintf(ignore_nand_secontext_file, "%s/%s", primary_path, NANDROID_IGNORE_SELINUX_FILE);
+#endif
 
     int fmt;
     for (;;) {
@@ -1952,6 +2090,13 @@ void misc_nandroid_menu() {
             else ui_format_gui_menu(item_compress, "Compression", TAR_GZ_DEFAULT_STR); // useless but to not make exceptions
         } else
             ui_format_gui_menu(item_compress, "Compression", "No");
+
+#ifdef BOARD_RECOVERY_USE_BBTAR
+        nandroid_secontext = !file_found(ignore_nand_secontext_file);
+        if (nandroid_secontext)
+            ui_format_gui_menu(item_secontext, "Process SE Context", "(x)");
+        else ui_format_gui_menu(item_secontext, "Process SE Context", "( )");
+#endif
 
         int chosen_item = get_filtered_menu_selection(headers, list, 0, 0, sizeof(list) / sizeof(char*));
         if (chosen_item == GO_BACK)
@@ -2045,6 +2190,15 @@ void misc_nandroid_menu() {
                 regenerate_md5_sum_menu();
                 break;
             }
+#ifdef BOARD_RECOVERY_USE_BBTAR
+            case 11: {
+                nandroid_secontext ^= 1;
+                if (nandroid_secontext)
+                    delete_a_file(ignore_nand_secontext_file);
+                else write_string_to_file(ignore_nand_secontext_file, "1");
+                break;
+            }
+#endif
         }
     }
 }
@@ -2132,6 +2286,12 @@ void set_custom_zip_path() {
         list[i] = strdup(dirs[i - 2] + dir_len);
     }
 
+/*
+ * do not modify custom_path when browsing before we ensure it can be mounted
+   else we could write a non mountable path to config file or we could alter fixed_headers path
+ * vold_mount_all(): vold managed volumes need to be mounted else we end up in /storage empty folder when browsing ../ while we entered from /sdcard for example
+   /storage/sdcard0, /storage/usbdisk... are not created during recovery start in init.rc but when we mount the volume for first time
+*/
     char custom_path2[PATH_MAX];
     sprintf(custom_path2, "%s", custom_path);
     vold_mount_all();
@@ -2140,6 +2300,8 @@ void set_custom_zip_path() {
         if (chosen_item == GO_BACK || chosen_item == REFRESH)
             break;
         if (chosen_item == 0) {
+            // browse up folder: ../
+            // check for up_folder == "." for exceptions!
             const char *up_folder = DirName(custom_path);
             if (strcmp(up_folder, "/") == 0 || strcmp(up_folder, ".") == 0)
                 sprintf(custom_path2, "/" );
@@ -2164,6 +2326,7 @@ void set_custom_zip_path() {
         else if (volume_for_path(custom_path2) != NULL && ensure_path_mounted(custom_path2) != 0)
             continue;
 
+        // we're now in a mounted path or ramdisk folder: browse selected folder
         sprintf(custom_path, "%s", custom_path2);
         fixed_headers[j] = custom_path;
         dir_len = strlen(custom_path);
@@ -2260,6 +2423,10 @@ int show_custom_zip_menu() {
         //LOGE("list[%d]=%s\n", numDirs+i, list[numDirs+i]);
     }
 
+    // do not modify custom_path when browsing before we ensure it can be mounted
+    // else we could write a non mountable path to config file or we could alter fixed_headers path
+    // vold_mount_all(): vold managed volumes need to be mounted else we end up in /storage empty folder
+    //  - /storage/sdcard0, /storage/usbdisk... are not created during recovery start in init.rc but when we mount the volume for first time
     int chosen_item;
     char custom_path2[PATH_MAX];
     sprintf(custom_path2, "%s", custom_path);
@@ -2281,12 +2448,15 @@ int show_custom_zip_menu() {
             else chosen_item = 0;
         }
         if (chosen_item < numDirs+1 && chosen_item >= 0) {
+            // we selected a folder: browse it
             if (chosen_item == 0) {
+                // we selected ../
                 const char *up_folder = DirName(custom_path2);
                 sprintf(custom_path2, "%s", up_folder);
                 if (strcmp(custom_path2, "/") != 0)
                     strcat(custom_path2, "/");
             } else {
+                // we selected a folder
                 sprintf(custom_path2, "%s", dirs[chosen_item - 1]);
             }
             //LOGE("\n\n Selected chosen_item=%d is: %s\n\n", chosen_item, custom_path2);
@@ -2349,6 +2519,7 @@ int show_custom_zip_menu() {
         else stop_md5_display_thread();
 
         if (confirm) {
+            // when installing from ramdisk paths, do not fail on ensure_path_mounted() commands
             set_ensure_mount_always_true(1);
             install_zip(files[chosen_item - numDirs - 1]);
             set_ensure_mount_always_true(0);
@@ -2372,8 +2543,10 @@ int show_custom_zip_menu() {
 /*
 - set_android_secure_path() should be called each time we want to backup/restore .android_secure
 - it will always favour external storage
+- get_android_secure_path() always sets it to get_primary_storage_path()
 - it will format path to retained android_secure location and set android_secure_ext to 1 or 0
 - android_secure_ext = 1, will allow nandroid processing of android_secure partition
+- always check android_secure_ext return code before using passed char *and_sec_path as it won't be modified if ignore_android_secure == 1
 - to force other storage, user must keep only one .android_secure folder in one of the sdcards
 - for /data/media devices, only second storage is allowed, not /sdcard
 - custom backup and restore jobs (incl twrp and ors modes) can force .android_secure to be ignored
@@ -2420,18 +2593,27 @@ int set_android_secure_path(char *and_sec_path) {
 }
 
 void reset_custom_job_settings(int custom_job) {
+    // check if we are setting defaults for custom jobs
     if (custom_job) {
         backup_boot = 1, backup_recovery = 1, backup_system = 1;
         backup_data = 1, backup_cache = 1;
         backup_wimax = 0;
         backup_sdext = 0;
     } else {
+        // we are exiting backup jobs, revert to default CWM so that stock Backup / Restore behaves as expected
         backup_boot = 1, backup_recovery = 1, backup_system = 1;
         backup_data = 1, backup_cache = 1;
         backup_wimax = 1;
         backup_sdext = 1;
     }
 
+    // preload: disabled by default to ensure it is never set to 1 on devices without /preload and no need to add extra checks in code
+    //          else it will be 1 even for devices without /preload and will block efs backup/restore until we touch the preload menu
+    //          or if we add extrac code checks for preload volume
+    // modem is disabled from nandroid backups, but can be part of custom backup jobs
+    // efs backup is disabled in stock nandroid. In custom Jobs, it must be alone.
+    // backup_data_media is always 0. It can be set to 1 only in custom backup and restore menu AND if is_data_media() && !twrp_backup_mode.value
+    // in TWRP it is part of backup/restore job
     backup_preload = 0;
     backup_modem = 0;
     backup_radio = 0;
@@ -2530,6 +2712,7 @@ void show_twrp_restore_menu(const char* backup_volume) {
 
     char* file = choose_file_menu(backup_path, "", headers);
     if (file == NULL) {
+        // either no valid files found or we selected no files by pressing back menu
         if (no_files_found)
             ui_print("Nothing to restore in %s !\n", backup_path);
         return;
@@ -2587,11 +2770,13 @@ static void custom_restore_handler(const char* backup_volume, const char* backup
 
         file = choose_file_menu(backup_path, NULL, headers);
         if (file == NULL) {
+            // either no valid files found or we selected no files by pressing back menu
             if (no_files_found)
                 ui_print("Nothing to restore in %s !\n", backup_path);
             return;
         }
 
+        // ensure there is no efs.img file in same folder (as nandroid_restore_partition_extended will force it to be restored)
         sprintf(tmp, "%s/efs.img", file);
         if (file_found(tmp)) {
             ui_print("efs.img file detected in %s!\n", file);
@@ -2626,6 +2811,7 @@ static void custom_restore_handler(const char* backup_volume, const char* backup
     } else if (backup_radio == RAW_BIN_FILE) {
         file = choose_file_menu(backup_path, ".bin", headers);
         if (file == NULL) {
+            // either no valid files found or we selected no files by pressing back menu
             if (no_files_found)
                 ui_print("Nothing to restore in %s !\n", backup_path);
             return;
@@ -2645,6 +2831,7 @@ static void custom_restore_handler(const char* backup_volume, const char* backup
         // process restore job
         file = choose_file_menu(backup_path, "", headers);
         if (file == NULL) {
+            // either no valid files found or we selected no files by pressing back menu
             if (no_files_found)
                 ui_print("Nothing to restore in %s !\n", backup_path);
             return;
@@ -2943,6 +3130,8 @@ void custom_restore_menu(const char* backup_volume) {
                 backup_data ^= 1;
                 break;
             case LIST_ITEM_ANDSEC:
+                // if !backup_data, it will not be processed in any-case by nandroid operations
+                // if there are extra voldmanaged volumes, warn to force restore .android_secure from one of them
                 ignore_android_secure ^= 1;
                 if (!ignore_android_secure && get_num_extra_volumes() != 0)
                     ui_print("To force restore to 2nd storage, keep only one .android_secure folder\n");
@@ -3205,6 +3394,8 @@ void custom_backup_menu(const char* backup_volume)
                 backup_data ^= 1;
                 break;
             case LIST_ITEM_ANDSEC:
+                // if !backup_data, it will not be processed in any-case by nandroid operations
+                // if there are extra voldmanaged volumes, warn to force backup .android_secure from one of them
                 ignore_android_secure ^= 1;
                 if (!ignore_android_secure && get_num_extra_volumes() != 0)
                     ui_print("To force backup from 2nd storage, keep only one .android_secure folder\n");
@@ -3360,9 +3551,10 @@ void get_device_id(char *device_id) {
     if (strcmp(model_id, "error") != 0) {
         LOGI("=> product model: '%s'\n", model_id);
         // Replace spaces with underscores
-        for(int i = 0; i < strlen(model_id); i++) {
+        size_t i;
+        for (i = 0; i < strlen(model_id); i++) {
             if (model_id[i] == ' ')
-            model_id[i] = '_';
+                model_id[i] = '_';
         }
         strcpy(device_id, model_id);
         sanitize_device_id(device_id);
@@ -3519,6 +3711,7 @@ static int default_aromafm(const char* root) {
     sprintf(aroma_file, "%s/%s", root, AROMA_FM_PATH);
 
     if (file_found(aroma_file)) {
+        // will ensure_path_mounted(aroma_file)
 #ifdef PHILZ_TOUCH_RECOVERY
         force_wait = -1;
 #endif
@@ -3535,6 +3728,7 @@ void run_aroma_browser() {
     int ret = -1;
     int i = 0;
 
+    // vold managed volumes need to be mounted as aromafm cannot mount them (they are not set into /etc/fstab)
     vold_mount_all();
     ret = default_aromafm(get_primary_storage_path());
     if (extra_paths != NULL) {
@@ -3696,6 +3890,8 @@ void show_philz_settings_menu()
                 int num_extra_volumes = get_num_extra_volumes();
                 int i = 0;
 
+                // choose_default_ors_menu() will set browse_for_file
+                // browse_for_file == 0 ---> we found .ors scripts in primary storage default location
                 choose_default_ors_menu(primary_path);
                 if (extra_paths != NULL) {
                     while (browse_for_file && i < num_extra_volumes) {

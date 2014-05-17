@@ -1,10 +1,16 @@
-ifneq ($(WITH_SIMPLE_RECOVERY),true)
-
 LOCAL_PATH := $(call my-dir)
+
+ifeq ($(RECOVERY_VARIANT),)
+ifeq ($(LOCAL_PATH),bootable/recovery)
+RECOVERY_VARIANT := cwm
+endif
+endif
+
+ifeq ($(RECOVERY_VARIANT),cwm)
 
 # philz touch gui: either prebuilt or from sources
 PHILZ_TOUCH_RECOVERY := true
-USE_PREBUILT_LIBTOUCH_GUI := true
+# USE_PREBUILT_LIBTOUCH_GUI := true
 
 ifdef PHILZ_TOUCH_RECOVERY
 ifdef USE_PREBUILT_LIBTOUCH_GUI
@@ -74,7 +80,7 @@ endif
 # This should be the same line as upstream to not break makerecoveries.sh
 RECOVERY_VERSION := $(RECOVERY_NAME) v6.0.4.8
 
-PHILZ_BUILD := 6.29.8
+PHILZ_BUILD := 6.41.6
 CWM_BASE_VERSION := $(shell echo $(RECOVERY_VERSION) | cut -d ' ' -f 3)
 LOCAL_CFLAGS += -DCWM_BASE_VERSION="$(CWM_BASE_VERSION)"
 
