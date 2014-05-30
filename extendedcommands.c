@@ -1034,8 +1034,9 @@ static void format_ext4_or_f2fs(const char* volume) {
             break;
     }
 
-    // refresh volume table fstype
+    // refresh volume table fstype and recreate the /etc/fstab file for proper system mount command function
     load_volume_table();
+    process_volumes();
     if (ret)
         LOGE("Could not format %s (%s)\n", volume, list[chosen_item]);
     else
@@ -2029,7 +2030,7 @@ void process_volumes() {
     }
 
     return;
-
+/*
     // dead code.
     if (device_flash_type() != BML)
         return;
@@ -2065,6 +2066,7 @@ void process_volumes() {
     nandroid_backup(backup_path);
     nandroid_restore(backup_path, 1, 1, 1, 1, 1, 0);
     ui_set_show_text(0);
+*/
 }
 
 void handle_failure(int ret) {
