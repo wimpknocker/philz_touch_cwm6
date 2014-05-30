@@ -1123,7 +1123,11 @@ int show_partition_menu() {
         if (chosen_item == GO_BACK || chosen_item == REFRESH)
             break;
         if (chosen_item == (mountable_volumes + formatable_volumes)) {
+#ifdef ENABLE_BLACKHAWK_PATCH
+            if (!is_data_media() || is_second_recovery()) {
+#else
             if (!is_data_media()) {
+#endif
                 show_mount_usb_storage_menu();
             } else {
 #ifdef USE_F2FS
