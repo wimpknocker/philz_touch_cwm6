@@ -36,16 +36,16 @@
 #include "advanced_functions.h"
 
 #include "voldclient/voldclient.h"
+#include "libcrecovery/common.h" // __popen / __pclose
 
-#include "libcrecovery/common.h"
-
-#ifdef ENABLE_BLACKHAWK_PATCH
-char *get_fs_type(const char* device) {
-    char tmp[PATH_MAX];
-    char *fstype = NULL;
-    
-    sprintf(tmp, "/sbin/blkid -c /dev/null %s", device);
-    FILE *fp = __popen(tmp, "r");
+// get actual fstype from device (modified code from @kumajaya)
+// device argument is the v->blk_device
+static char* real_device_fstype = NULL;
+char* get_real_fstype(const char* device) {
+    char cmd[PATH_MAX];
+    real_device_fstype = NULL;
+    sprintf(cmd, "/sbin/blkid -c /dev/null %s", device);
+    FILE *fp = __popen(cmd, "r");
     if (fp == NULL) {
         fprintf(stderr, "Unable to execute blkid.\n");
         return NULL;
@@ -57,16 +57,15 @@ char *get_fs_type(const char* device) {
         char* start = strstr(line, "TYPE=");
         if (start != NULL && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
             /* fprintf(stderr, "Found %s filesystem on %s\n", value, device); */
-            fstype = value;
+            real_device_fstype = value;
         } else {
             /* fprintf(stderr, "None or unknown filesystem on %s\n", device); */
         }
     }
 
     __pclose(fp);
-    return fstype;
+    return real_device_fstype;
 }
-#endif
 
 static struct fstab *fstab = NULL;
 
@@ -124,7 +123,7 @@ static void add_extra_fstab_entries(int num) {
 
 static void load_volume_table_extra() {
     int i;
-
+    fs_mgr_free_fstab(fstab_extra);
     fstab_extra = fs_mgr_read_fstab("/etc/extra.fstab");
     if (!fstab_extra) {
         fprintf(stderr, "No /etc/extra.fstab\n");
@@ -134,17 +133,6 @@ static void load_volume_table_extra() {
     fprintf(stderr, "extra filesystem table (device2, fstype2, options2):\n");
     for(i = 0; i < fstab_extra->num_entries; ++i) {
         Volume* v = &fstab_extra->recs[i];
-#ifdef ENABLE_BLACKHAWK_PATCH
-        char *fstype = get_fs_type(v->blk_device);
-        if (fstype != NULL) {
-            free(v->fs_type);
-            v->fs_type = strdup(fstype);
-#ifdef USE_F2FS
-            if (strcmp(v->fs_type, "f2fs") == 0)
-                v->fs_options = "noatime,nodev,nodiratime,inline_xattr";
-#endif
-        }
-#endif
         add_extra_fstab_entries(i);
         fprintf(stderr, "  %d %s %s %s %lld\n", i, v->mount_point, v->fs_type,
                 v->blk_device, v->length);
@@ -169,6 +157,7 @@ void load_volume_table() {
     int i;
     int ret;
 
+    fs_mgr_free_fstab(fstab);
     fstab = fs_mgr_read_fstab("/etc/recovery.fstab");
     if (!fstab) {
         LOGE("failed to read /etc/recovery.fstab\n");
@@ -183,9 +172,10 @@ void load_volume_table() {
         return;
     }
 
-    // Process vold-managed volumes with mount point "auto"
     for (i = 0; i < fstab->num_entries; ++i) {
         Volume* v = &fstab->recs[i];
+
+        // Process vold-managed volumes with mount point "auto"
         if (fs_mgr_is_voldmanaged(v) && strcmp(v->mount_point, "auto") == 0) {
             char mount[PATH_MAX];
 
@@ -194,6 +184,25 @@ void load_volume_table() {
             free(v->mount_point);
             v->mount_point = strdup(mount);
         }
+#ifdef USE_F2FS
+        // allow switching between f2fs/ext4 depending on actual real format
+        else if (strcmp(v->fs_type, "ext4") == 0 || strcmp(v->fs_type, "f2fs") == 0) {
+            char* real_fstype = get_real_fstype(v->blk_device);
+            if (real_fstype == NULL || strcmp(real_fstype, v->fs_type) == 0)
+                continue;
+
+            if (strcmp(real_fstype, "ext4") == 0 || strcmp(real_fstype, "f2fs") == 0) {
+                free(v->fs_type);
+                v->fs_type = strdup(real_fstype);
+
+                if (strcmp(v->fs_type, "f2fs") == 0) {
+                    if (v->fs_options != NULL)
+                        free(v->fs_options);
+                    v->fs_options = strdup("noatime,nodev,nodiratime,inline_xattr");
+                }
+            }
+        }
+#endif
     }
 
     load_volume_table_extra();
@@ -206,31 +215,9 @@ void load_volume_table() {
     fprintf(stderr, "=========================\n");
     for (i = 0; i < fstab->num_entries; ++i) {
         Volume* v = &fstab->recs[i];
-#ifdef ENABLE_BLACKHAWK_PATCH
-        char *fstype = get_fs_type(v->blk_device);
-        if (fstype != NULL) {
-                free(v->fs_type);
-                v->fs_type = strdup(fstype);
-#ifdef USE_F2FS
-        if (strcmp(v->fs_type, "f2fs") == 0)
-            v->fs_options = "noatime,nodev,nodiratime,inline_xattr";
-#endif
-        }
-#endif
         fprintf(stderr, "  %d %s %s %s %lld\n", i, v->mount_point, v->fs_type,
                 v->blk_device, v->length);
         if (v->blk_device2 != NULL) {
-#ifdef ENABLE_BLACKHAWK_PATCH
-            fstype = get_fs_type(v->blk_device2);
-            if (fstype != NULL) {
-                    free(v->fs_type2);
-                    v->fs_type2 = strdup(fstype);
-#ifdef USE_F2FS
-        if (strcmp(v->fs_type2, "f2fs") == 0)
-            v->fs_options2 = "noatime,nodev,nodiratime,inline_xattr";
-#endif
-            }
-#endif
             // print extra volume table
             fprintf(stderr, "  %d %s %s %s %lld\n", i, v->mount_point, v->fs_type2,
                     v->blk_device2, v->length);
@@ -308,7 +295,6 @@ int try_mount(const char* device, const char* mount_point, const char* fs_type, 
     if (device == NULL || mount_point == NULL || fs_type == NULL)
         return -1;
     int ret = 0;
-#ifndef ENABLE_BLACKHAWK_PATCH
     if (fs_options == NULL) {
         ret = mount(device, mount_point, fs_type,
                        MS_NOATIME | MS_NODEV | MS_NODIRATIME, "");
@@ -319,13 +305,6 @@ int try_mount(const char* device, const char* mount_point, const char* fs_type, 
         sprintf(mount_cmd, "mount -t %s -o%s %s %s", fs_type, fs_options, device, mount_point);
         ret = __system(mount_cmd);
     }
-#else
-    if (fs_options == NULL)
-        fs_options = "noatime,nodev,nodiratime";
-    char mount_cmd[PATH_MAX];
-    sprintf(mount_cmd, "mount -t %s -o%s %s %s", fs_type, fs_options, device, mount_point);
-    ret = __system(mount_cmd);
-#endif
     if (ret == 0)
         return 0;
     LOGW("failed to mount %s %s %s (%s)\n", device, mount_point, fs_type, strerror(errno));
@@ -473,6 +452,9 @@ int ensure_path_mounted_at_mount_point(const char* path, const char* mount_point
         return mtd_mount_partition(partition, mount_point, v->fs_type, 0);
     } else if (strcmp(v->fs_type, "ext4") == 0 ||
                strcmp(v->fs_type, "ext3") == 0 ||
+#ifdef USE_F2FS
+               strcmp(v->fs_type, "f2fs") == 0 ||
+#endif
                strcmp(v->fs_type, "rfs") == 0 ||
                strcmp(v->fs_type, "vfat") == 0) {
         // LOGE("main pass: %s %s %s %s\n", v->blk_device, mount_point, v->fs_type, v->fs_type2); // debug
@@ -652,10 +634,11 @@ int format_volume(const char* volume) {
 
 #ifdef USE_F2FS
     if (strcmp(v->fs_type, "f2fs") == 0) {
-        const char* args[] = { "mkfs.f2fs", v->blk_device };
-        int result = make_f2fs_main(2, (char**)args);
+        char cmd[PATH_MAX];
+        sprintf(cmd, "mkfs.f2fs %s", v->blk_device);
+        int result = __system(cmd);
         if (result != 0) {
-            LOGE("format_volume: mkfs.f2fs failed on %s\n", v->blk_device);
+            LOGE("format_volume: mkfs.f2fs failed on %s (%s)\n", v->blk_device, strerror(errno));
             return -1;
         }
         return 0;
