@@ -980,7 +980,9 @@ int nandroid_restore_partition_extended(const char* backup_path, const char* mou
         backup_filesystem = NULL;
     if (0 == strcmp(vol->mount_point, "/data") && is_data_media())
         backup_filesystem = NULL;
-#ifdef ENABLE_BLACKHAWK_PATCH
+#ifdef USE_F2FS
+    // allow restoring ext4 backup to f2fs filesystem, vice versa
+    // format_volume() get actual fstype from device
     if (0 == strcmp(vol->mount_point, "/system") || 0 == strcmp(vol->mount_point, "/cache"))
         backup_filesystem = NULL;
 #endif
@@ -994,14 +996,8 @@ int nandroid_restore_partition_extended(const char* backup_path, const char* mou
 
     ui_print("Restoring %s...\n", name);
     if (backup_filesystem == NULL) {
-#ifdef ENABLE_BLACKHAWK_PATCH
-        LOGI("Recursive delete %s...\n", name);
-        if (0 != (ret = format_unknown_device(NULL, mount_point, NULL))) {
-            ui_print("Error while deleting %s!\n", mount_point);
-#else
         if (0 != (ret = format_volume(mount_point))) {
             ui_print("Error while formatting %s!\n", mount_point);
-#endif
             return ret;
         }
     } else if (0 != (ret = format_device(device, mount_point, backup_filesystem))) {
