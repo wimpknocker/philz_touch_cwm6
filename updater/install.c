@@ -53,6 +53,10 @@ static int totalbaks = 0;
 #include "make_ext4fs.h"
 #endif
 
+#ifdef USE_F2FS
+extern int make_f2fs_main(int argc, char **argv);
+#endif
+
 // mount(fs_type, partition_type, location, mount_point)
 //
 //    fs_type="yaffs2" partition_type="MTD"     location=partition
@@ -121,8 +125,13 @@ Value* MountFn(const char* name, State* state, int argc, Expr* argv[]) {
         }
         result = mount_point;
     } else {
+        char data[50]  = "";
+#ifdef USE_F2FS
+        if (strcmp(fs_type, "f2fs") == 0)
+            strcat(data, "inline_xattr,background_gc=off,active_logs=2");
+#endif
         if (mount(location, mount_point, fs_type,
-                  MS_NOATIME | MS_NODEV | MS_NODIRATIME, "") < 0) {
+                  MS_NOATIME | MS_NODEV | MS_NODIRATIME, data) < 0) {
             fprintf(stderr, "%s: failed to mount %s at %s: %s\n",
                     name, location, mount_point, strerror(errno));
             result = strdup("");
@@ -267,6 +276,18 @@ Value* FormatFn(const char* name, State* state, int argc, Expr* argv[]) {
             goto done;
         }
         result = location;
+#ifdef USE_F2FS
+    } else if (strcmp(fs_type, "f2fs") == 0) {
+        const char* args[] = { "mkfs.f2fs", location };
+        int status = make_f2fs_main(2, (char**)args);
+        if (status != 0) {
+            fprintf(stderr, "%s: make_f2fs_main failed (%d) on %s",
+                name, status, location);
+            result = strdup("");
+            goto done;
+        }
+        result = location;
+#endif
 #ifdef USE_EXT4
     } else if (strcmp(fs_type, "ext4") == 0) {
         int status = make_ext4fs(location, atoll(fs_size), mount_point, sehandle);
