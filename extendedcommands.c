@@ -110,9 +110,9 @@ void write_recovery_version() {
     sprintf(path, "%s/%s", get_primary_storage_path(), RECOVERY_VERSION_FILE);
     write_string_to_file(path, EXPAND(RECOVERY_VERSION) "\n" EXPAND(TARGET_DEVICE));
     // force unmount /data for /data/media devices as we call this on recovery exit
-    ignore_data_media_workaround(1);
+    preserve_data_media(0);
     ensure_path_unmounted(path);
-    ignore_data_media_workaround(0);
+    preserve_data_media(1);
 }
 
 static void write_last_install_path(const char* install_path) {
@@ -707,15 +707,11 @@ int confirm_selection(const char* title, const char* confirm) {
         int chosen_item = get_menu_selection(confirm_headers, items, 0, 0);
         ret = (chosen_item == 1);
     }
+
     free(confirm_str);
     ui_set_showing_back_button(old_val);
     return ret;
 }
-
-#define MKE2FS_BIN      "/sbin/mke2fs"
-#define TUNE2FS_BIN     "/sbin/tune2fs"
-#define E2FSCK_BIN      "/sbin/e2fsck"
-extern void reset_ext4fs_info();
 
 // format_device() is called by nandroid_restore_partition_extended(), by format_ext4_or_f2fs() and by format_sdcard()
 extern struct selabel_handle *sehandle;
@@ -727,7 +723,7 @@ int format_device(const char *device, const char *path, const char *fs_type) {
     if (is_data_media_volume_path(path)) {
         return format_unknown_device(NULL, path, NULL);
     }
-    if (strstr(path, "/data") == path && is_data_media()) {
+    if (strstr(path, "/data") == path && is_data_media() && is_data_media_preserved()) {
         return format_unknown_device(NULL, path, NULL);
     }
 
@@ -795,7 +791,7 @@ int format_device(const char *device, const char *path, const char *fs_type) {
             // Our desired filesystem matches the one in fstab, respect v->length
             length = v->length;
         }
-        reset_ext4fs_info();
+
         int result = make_ext4fs(device, length, v->mount_point, sehandle);
         if (result != 0) {
             LOGE("format_volume: make_ext4fs failed on %s\n", device);
@@ -1144,9 +1140,9 @@ int show_partition_menu() {
             } else {
                 if (!confirm_selection("format /data and /data/media (/sdcard)", confirm))
                     continue;
-                // sets int ignore_data_media = 1
-                // when ignore_data_media = 1, this will truly format /data as a partition (roots.c)
-                ignore_data_media_workaround(1);
+                // sets is_data_media_preserved() to 0
+                // this will truly format /data as a partition (format_device() and format_volume())
+                preserve_data_media(0);
 #ifdef USE_F2FS
                 if (enable_f2fs_ext4_conversion) {
                     format_ext4_or_f2fs("/data");
@@ -1159,7 +1155,7 @@ int show_partition_menu() {
                     else
                         ui_print("Done.\n");
                 }
-                ignore_data_media_workaround(0);
+                preserve_data_media(1);
 
                 // recreate /data/media with proper permissions
                 ensure_path_mounted("/data");
@@ -1171,7 +1167,7 @@ int show_partition_menu() {
             MountMenuEntry* e = &mount_menu[chosen_item];
 
             if (is_path_mounted(e->path)) {
-                ignore_data_media_workaround(1);
+                preserve_data_media(0);
                 if (0 != ensure_path_unmounted(e->path))
 #ifdef ENABLE_BLACKHAWK_PATCH
                 {
@@ -1183,7 +1179,7 @@ int show_partition_menu() {
 #ifdef ENABLE_BLACKHAWK_PATCH
                 }
 #endif
-                ignore_data_media_workaround(0);
+                preserve_data_media(1);
             } else {
                 if (0 != ensure_path_mounted(e->path))
                     ui_print("Error mounting %s!\n", e->path);
@@ -2035,12 +2031,12 @@ void process_volumes() {
 
         if (count != 0) {
             count = 5;
-            ignore_data_media_workaround(1);
+            preserve_data_media(0);
             while (count > 0 && ensure_path_unmounted("/data") != 0) {
                 usleep(500000);
                 count--;
             }
-            ignore_data_media_workaround(0);
+            preserve_data_media(1);
 #ifdef ENABLE_BLACKHAWK_PATCH
             if (count == 0 && !is_second_recovery())
 #else
