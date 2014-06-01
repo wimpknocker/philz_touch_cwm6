@@ -1093,6 +1093,9 @@ int show_partition_menu() {
         }
     }
 
+#ifdef USE_F2FS
+    int enable_f2fs_ext4_conversion = 0;
+#endif
     for (;;) {
         for (i = 0; i < mountable_volumes; i++) {
             MountMenuEntry* e = &mount_menu[i];
@@ -1114,10 +1117,18 @@ int show_partition_menu() {
 #endif
             list[mountable_volumes + formatable_volumes] = "mount USB storage";
             list[mountable_volumes + formatable_volumes + 1] = NULL;
+#ifdef USE_F2FS
+            list[mountable_volumes + formatable_volumes + 1] = "toggle f2fs <-> ext4 migration";
+            list[mountable_volumes + formatable_volumes + 2] = NULL;
+#endif
         } else {
             list[mountable_volumes + formatable_volumes] = "format /data and /data/media (/sdcard)";
             list[mountable_volumes + formatable_volumes + 1] = "mount USB storage";
             list[mountable_volumes + formatable_volumes + 2] = NULL;
+#ifdef USE_F2FS
+            list[mountable_volumes + formatable_volumes + 2] = "toggle f2fs <-> ext4 migration";
+            list[mountable_volumes + formatable_volumes + 3] = NULL;
+#endif
         }
 
         chosen_item = get_menu_selection(headers, list, 0, 0);
@@ -1131,21 +1142,23 @@ int show_partition_menu() {
 #endif
                 show_mount_usb_storage_menu();
             } else {
-#ifdef USE_F2FS
-                ignore_data_media_workaround(1);
-                format_ext4_or_f2fs("/data");
-#else
                 if (!confirm_selection("format /data and /data/media (/sdcard)", confirm))
                     continue;
                 // sets int ignore_data_media = 1
                 // when ignore_data_media = 1, this will truly format /data as a partition (roots.c)
                 ignore_data_media_workaround(1);
-                ui_print("Formatting /data...\n");
-                if (0 != format_volume("/data"))
-                    ui_print("Error formatting /data!\n");
-                else
-                    ui_print("Done.\n");
+#ifdef USE_F2FS
+                if (enable_f2fs_ext4_conversion) {
+                    format_ext4_or_f2fs("/data");
+                } else
 #endif
+                {
+                    ui_print("Formatting /data...\n");
+                    if (0 != format_volume("/data"))
+                        ui_print("Error formatting /data!\n");
+                    else
+                        ui_print("Done.\n");
+                }
                 ignore_data_media_workaround(0);
 
                 // recreate /data/media with proper permissions
@@ -1189,22 +1202,30 @@ int show_partition_menu() {
             }
 
 #ifdef USE_F2FS
-            if (!(is_data_media() && strcmp(e->path, "/data") == 0)) {
+            if (enable_f2fs_ext4_conversion && !(is_data_media() && strcmp(e->path, "/data") == 0)) {
                 if (strcmp(e->type, "ext4") == 0 || strcmp(e->type, "f2fs") == 0) {
                     format_ext4_or_f2fs(e->path);
                     continue;
                 }
-            }
+            } else
 #endif
-
-            if (!confirm_selection(confirm_string, confirm))
-                continue;
-            ui_print("Formatting %s...\n", e->path);
-            if (0 != format_volume(e->path))
-                ui_print("Error formatting %s!\n", e->path);
-            else
-                ui_print("Done.\n");
+            {
+                if (!confirm_selection(confirm_string, confirm))
+                    continue;
+                ui_print("Formatting %s...\n", e->path);
+                if (0 != format_volume(e->path))
+                    ui_print("Error formatting %s!\n", e->path);
+                else
+                    ui_print("Done.\n");
+            }
         }
+#ifdef USE_F2FS
+        else if ((is_data_media() && chosen_item == (mountable_volumes + formatable_volumes + 2)) ||
+                    (!is_data_media() && chosen_item == (mountable_volumes + formatable_volumes + 1))) {
+            enable_f2fs_ext4_conversion ^= 1;
+            ui_print("ext4 <-> f2fs conversion %s\n", enable_f2fs_ext4_conversion ? "enabled" : "disabled");
+        }
+#endif
     }
 
     free(mount_menu);
