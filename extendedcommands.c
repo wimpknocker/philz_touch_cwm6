@@ -1161,7 +1161,11 @@ int show_partition_menu() {
                 ensure_path_mounted("/data");
                 setup_data_media();
             }
-        } else if (is_data_media() && chosen_item == (mountable_volumes + formatable_volumes + 1)) {
+        } else if (is_data_media() && chosen_item == (mountable_volumes + formatable_volumes + 1)
+#ifdef ENABLE_BLACKHAWK_PATCH
+                    && !is_second_recovery()
+#endif
+                    ) {
             show_mount_usb_storage_menu();
         } else if (chosen_item < mountable_volumes) {
             MountMenuEntry* e = &mount_menu[chosen_item];
@@ -1214,6 +1218,9 @@ int show_partition_menu() {
         }
 #ifdef USE_F2FS
         else if ((is_data_media() && chosen_item == (mountable_volumes + formatable_volumes + 2)) ||
+#ifdef ENABLE_BLACKHAWK_PATCH
+                    (is_second_recovery() && chosen_item == (mountable_volumes + formatable_volumes + 1)) ||
+#endif
                     (!is_data_media() && chosen_item == (mountable_volumes + formatable_volumes + 1))) {
             enable_f2fs_ext4_conversion ^= 1;
             ui_print("ext4 <-> f2fs conversion %s\n", enable_f2fs_ext4_conversion ? "enabled" : "disabled");
