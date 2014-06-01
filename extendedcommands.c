@@ -1167,18 +1167,15 @@ int show_partition_menu() {
             MountMenuEntry* e = &mount_menu[chosen_item];
 
             if (is_path_mounted(e->path)) {
+#ifdef ENABLE_BLACKHAWK_PATCH
+               if (strcmp(e->path, "/data") == 0 && is_second_recovery()) {
+                    ui_print("/data locked in 2nd recovery!\n");
+                    continue;
+               }
+#endif
                 preserve_data_media(0);
                 if (0 != ensure_path_unmounted(e->path))
-#ifdef ENABLE_BLACKHAWK_PATCH
-                {
-                    if (strcmp(e->path, "/data") == 0 && is_second_recovery())
-                        ui_print("/data locked in 2nd recovery!\n");
-                    else
-#endif
                     ui_print("Error unmounting %s!\n", e->path);
-#ifdef ENABLE_BLACKHAWK_PATCH
-                }
-#endif
                 preserve_data_media(1);
             } else {
                 if (0 != ensure_path_mounted(e->path))
