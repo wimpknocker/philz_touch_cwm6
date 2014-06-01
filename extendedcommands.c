@@ -1138,8 +1138,15 @@ int show_partition_menu() {
 #endif
                 show_mount_usb_storage_menu();
             } else {
-                if (!confirm_selection("format /data and /data/media (/sdcard)", confirm))
-                    continue;
+#ifdef USE_F2FS
+                if (enable_f2fs_ext4_conversion) {
+                    // do nothing
+                } else
+#endif
+                {
+                    if (!confirm_selection("format /data and /data/media (/sdcard)", confirm))
+                        continue;
+                }
                 // sets is_data_media_preserved() to 0
                 // this will truly format /data as a partition (format_device() and format_volume())
                 preserve_data_media(0);
