@@ -1211,7 +1211,7 @@ int show_partition_menu() {
                     format_ext4_or_f2fs(e->path);
                     continue;
                 }
-            } else
+            }
 #endif
             {
                 if (!confirm_selection(confirm_string, confirm))
