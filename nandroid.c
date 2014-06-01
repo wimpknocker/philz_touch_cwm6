@@ -980,12 +980,6 @@ int nandroid_restore_partition_extended(const char* backup_path, const char* mou
         backup_filesystem = NULL;
     if (0 == strcmp(vol->mount_point, "/data") && is_data_media())
         backup_filesystem = NULL;
-#ifdef USE_F2FS
-    // allow restoring ext4 backup to f2fs filesystem, vice versa
-    // format_volume() get actual fstype from device
-    if (0 == strcmp(vol->mount_point, "/system") || 0 == strcmp(vol->mount_point, "/cache"))
-        backup_filesystem = NULL;
-#endif
 
     ensure_directory(mount_point);
 
