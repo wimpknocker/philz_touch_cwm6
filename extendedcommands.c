@@ -1139,9 +1139,7 @@ int show_partition_menu() {
                 show_mount_usb_storage_menu();
             } else {
 #ifdef USE_F2FS
-                if (enable_f2fs_ext4_conversion) {
-                    // do nothing
-                } else
+                if (!enable_f2fs_ext4_conversion)
 #endif
                 {
                     if (!confirm_selection("format /data and /data/media (/sdcard)", confirm))

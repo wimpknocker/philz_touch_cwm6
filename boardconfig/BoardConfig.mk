@@ -503,23 +503,13 @@ else ifeq ($(TARGET_PRODUCT), cm_superior)
     BRIGHTNESS_SYS_FILE := "/sys/class/backlight/panel/brightness"
     BOARD_USE_B_SLOT_PROTOCOL := true
 
-#Galaxy Mega I9205 (meliusltexx)
-else ifneq ($(filter $(TARGET_PRODUCT),cm_meliusltexx),)
-    TARGET_COMMON_NAME := Galaxy Mega I9205
+#Galaxy Mega I9205 (meliusltexx) and i9200 (melius3gxx)
+else ifneq ($(filter $(TARGET_PRODUCT),cm_meliusltexx cm_melius3gxx),)
+    TARGET_COMMON_NAME := Galaxy Mega ($(TARGET_PRODUCT))
     BOOTLOADER_CMD_ARG := "download"
     KERNEL_EXFAT_MODULE_NAME := "exfat"
     TARGET_SCREEN_HEIGHT := 1280
     TARGET_SCREEN_WIDTH := 720
-    BRIGHTNESS_SYS_FILE := "/sys/class/lcd/panel/panel/brightness"
-    BOARD_USE_B_SLOT_PROTOCOL := true
-
-#Galaxy Mega i9200 (melius3gxx)
-else ifneq ($(filter $(TARGET_PRODUCT),cm_melius3gxx),)
-    TARGET_COMMON_NAME := Galaxy Mega i9200
-    BOOTLOADER_CMD_ARG := "download"
-    KERNEL_EXFAT_MODULE_NAME := "exfat"
-    TARGET_SCREEN_HEIGHT := 960
-    TARGET_SCREEN_WIDTH := 540
     BRIGHTNESS_SYS_FILE := "/sys/class/lcd/panel/panel/brightness"
     BOARD_USE_B_SLOT_PROTOCOL := true
 
@@ -872,6 +862,7 @@ else ifneq ($(filter $(TARGET_PRODUCT),cm_xt1053 cm_xt1055 cm_xt1056 cm_xt1058 c
 #Motorola Moto G Unified (falcon): Verizon (xt1028), Boostmobile (xt1031), GSM (xt1032), Dual Sim (xt1033), Retail US (xt1034), Google Play Edition (falcon_gpe)
 else ifeq ($(TARGET_PRODUCT), cm_falcon)
     TARGET_COMMON_NAME := Moto G (falcon)
+    TARGET_USERIMAGES_USE_F2FS := true
     TARGET_SCREEN_HEIGHT := 1280
     TARGET_SCREEN_WIDTH := 720
     BRIGHTNESS_SYS_FILE := "/sys/class/leds/lcd-backlight/brightness"
