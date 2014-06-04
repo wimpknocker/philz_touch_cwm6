@@ -1793,6 +1793,8 @@ void show_advanced_power_menu() {
 
 #endif
 
+#endif
+
 int show_advanced_menu() {
     char buf[80];
     int i = 0, j = 0, chosen_item = 0, list_index = 0;
