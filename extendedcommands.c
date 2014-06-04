@@ -1753,6 +1753,28 @@ void show_advanced_power_menu() {
     }
 }
 
+#ifdef ENABLE_BLACKHAWK_PATCH
+
+#ifdef ENABLE_LOKI
+
+#ifdef BOARD_NATIVE_DUALBOOT_SINGLEDATA
+#define FIXED_ADVANCED_ENTRIES 9
+#else
+#define FIXED_ADVANCED_ENTRIES 7
+#endif
+
+#else
+
+#ifdef BOARD_NATIVE_DUALBOOT_SINGLEDATA
+#define FIXED_ADVANCED_ENTRIES 8
+#else
+#define FIXED_ADVANCED_ENTRIES 6
+#endif
+
+#endif
+
+#else
+
 #ifdef ENABLE_LOKI
 
 #ifdef BOARD_NATIVE_DUALBOOT_SINGLEDATA
