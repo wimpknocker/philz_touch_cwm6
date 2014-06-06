@@ -1823,6 +1823,7 @@ int show_advanced_menu() {
     int index_loki = list_index++;
     list[index_loki] = NULL;
 #endif
+
 #ifdef ENABLE_BLACKHAWK_PATCH
     int index_dbtool = list_index++;
     list[index_dbtool] = NULL;
@@ -1961,6 +1962,7 @@ int show_advanced_menu() {
                 break;
             }
 #endif
+
 #ifdef ENABLE_BLACKHAWK_PATCH
             if (chosen_item == index_dbtool) {
                 __system("aroma 1 0 /res/misc/tool.zip");
