@@ -289,7 +289,10 @@ int check_backup_size(const char* backup_path) {
     // also, add extra 50 Mb for security measures
     if (free_percent < 3 || (default_backup_handler != dedupe_compress_wrapper && free_mb < backup_size_mb + 50)) {
         LOGW("Low space for backup!\n");
-        if (nand_prompt_on_low_space.value && !confirm_selection("Low free space! Continue anyway?", "Yes - Continue Nandroid Job"))
+        if (!ui_is_initialized()) {
+            // do not prompt when it is an "adb shell nandroid backup" command
+            LOGW("\n>>> Backup could fail with I/O error!! <<<\n\n");
+        } else if (nand_prompt_on_low_space.value && !confirm_selection("Low free space! Continue anyway?", "Yes - Continue Nandroid Job"))
             return -1;
     }
 
@@ -958,7 +961,6 @@ int twrp_restore(const char* backup_path) {
     // progress bar will be of indeterminate progress
     // setting nandroid_files_total = 0 will force this in nandroid_callback()
     ui_set_background(BACKGROUND_ICON_INSTALLING);
-    ui_show_indeterminate_progress();
     nandroid_files_total = 0;
     nandroid_start_msec = timenow_msec();
 #ifdef PHILZ_TOUCH_RECOVERY
@@ -973,6 +975,8 @@ int twrp_restore(const char* backup_path) {
         if (0 != check_twrp_md5sum(backup_path))
             return print_and_error("MD5 mismatch!\n");
     }
+
+    ui_show_indeterminate_progress(); // call after verify_nandroid_md5sum() as it will reset the progress
 
     int ret;
 
