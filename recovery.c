@@ -431,6 +431,8 @@ erase_volume(const char *volume) {
         copy_logs();
     }
 
+    ui_set_background(BACKGROUND_ICON_CLOCKWORK);
+    ui_reset_progress();
     return result;
 }
 
@@ -1239,6 +1241,10 @@ main(int argc, char **argv) {
         handle_failure(1);
     }
     else if (status != INSTALL_SUCCESS || ui_text_visible()) {
+#ifdef PHILZ_TOUCH_RECOVERY
+        // check if recovery is locked
+        check_recovery_lock();
+#endif
         prompt_and_wait();
     }
 
