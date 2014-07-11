@@ -48,10 +48,8 @@ LOCAL_SRC_FILES := \
     digest/md5.c \
     recovery_settings.c \
     nandroid.c \
-    reboot.c \
     ../../system/core/toolbox/dynarray.c \
     ../../system/core/toolbox/newfs_msdos.c \
-    firmware.c \
     edifyscripting.c \
     prop.c \
     adb_install.c \
@@ -80,7 +78,7 @@ endif
 # This should be the same line as upstream to not break makerecoveries.sh
 RECOVERY_VERSION := $(RECOVERY_NAME) v6.0.5.0
 
-PHILZ_BUILD := 6.48.4
+PHILZ_BUILD := 6.50.1
 CWM_BASE_VERSION := $(shell echo $(RECOVERY_VERSION) | cut -d ' ' -f 3)
 LOCAL_CFLAGS += -DCWM_BASE_VERSION="$(CWM_BASE_VERSION)"
 
@@ -104,12 +102,6 @@ LOCAL_CFLAGS += -DRECOVERY_MOD_VERSION_BUILD="$(RECOVERY_MOD_VERSION_BUILD)"
 LOCAL_CFLAGS += -DPHILZ_BUILD="$(PHILZ_BUILD)"
 #compile date:
 #LOCAL_CFLAGS += -DBUILD_DATE="\"`date`\""
-
-#debug and calibration logging for touch code
-#RECOVERY_TOUCH_DEBUG := true
-ifeq ($(RECOVERY_TOUCH_DEBUG),true)
-LOCAL_CFLAGS += -DRECOVERY_TOUCH_DEBUG
-endif
 
 ifeq ($(ENABLE_BLACKHAWK_PATCH),true)
 LOCAL_CFLAGS += -DENABLE_BLACKHAWK_PATCH
@@ -180,7 +172,7 @@ else
   LOCAL_SRC_FILES += $(BOARD_CUSTOM_RECOVERY_UI)
 endif
 
-LOCAL_STATIC_LIBRARIES += libvoldclient libsdcard libminipigz libfsck_msdos
+LOCAL_STATIC_LIBRARIES += libvoldclient libsdcard libminipigz libreboot_static libfsck_msdos
 LOCAL_STATIC_LIBRARIES += libmake_ext4fs libext4_utils_static libz libsparse_static
 
 ifeq ($(BOARD_RECOVERY_USE_LIBTAR),true)
@@ -250,6 +242,14 @@ $(RECOVERY_BUSYBOX_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
 	$(hide) ln -sf $(BUSYBOX_BINARY) $@
 
 ALL_DEFAULT_INSTALLED_MODULES += $(RECOVERY_BUSYBOX_SYMLINKS) 
+
+# Reboot static library
+include $(CLEAR_VARS)
+LOCAL_MODULE := libreboot_static
+LOCAL_MODULE_TAGS := optional
+LOCAL_CFLAGS := -Dmain=reboot_main
+LOCAL_SRC_FILES := ../../system/core/reboot/reboot.c
+include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := killrecovery.sh

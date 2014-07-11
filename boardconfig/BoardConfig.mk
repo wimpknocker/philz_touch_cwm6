@@ -94,6 +94,14 @@ else ifeq ($(TARGET_PRODUCT), cm_tf700t)
     TARGET_SCREEN_WIDTH := 1920
     BRIGHTNESS_SYS_FILE := "/sys/class/backlight/pwm-backlight/brightness"
 
+#Asus Memo Pad Smart (me301t)
+else ifeq ($(TARGET_PRODUCT), cm_me301t)
+    TARGET_COMMON_NAME := Asus Memo Pad Smart
+    BOARD_USE_NTFS_3G := false
+    TARGET_SCREEN_HEIGHT := 800
+    TARGET_SCREEN_WIDTH := 1280
+    BRIGHTNESS_SYS_FILE := "/sys/class/backlight/pwm-backlight/brightness"
+
 #Galaxy R / Z (i9103)
 else ifeq ($(TARGET_PRODUCT), cm_i9103)
     TARGET_COMMON_NAME := i9103
@@ -505,7 +513,7 @@ else ifneq ($(filter $(TARGET_PRODUCT),cm_meliusltexx cm_melius3gxx),)
     BRIGHTNESS_SYS_FILE := "/sys/class/lcd/panel/panel/brightness"
     BOARD_USE_B_SLOT_PROTOCOL := true
 
-#Samsung Galaxy Tab 3 7.0: SM-T210 (lt02wifi), SM-T211 (lt023g)
+#Galaxy Tab 3 7.0: SM-T210 (lt02wifi), SM-T211 (lt023g)
 else ifneq ($(filter $(TARGET_PRODUCT),cm_lt02wifi cm_lt023g),)
     TARGET_COMMON_NAME := Galaxy Tab 3 7.0 ($(TARGET_PRODUCT))
     BOOTLOADER_CMD_ARG := "download"
@@ -515,7 +523,7 @@ else ifneq ($(filter $(TARGET_PRODUCT),cm_lt02wifi cm_lt023g),)
     BRIGHTNESS_SYS_FILE := "/sys/class/backlight/panel/brightness"
     BOARD_USE_B_SLOT_PROTOCOL := true
 
-#Samsung Galaxy Tab 3 8.0: SM-T310 (lt01wifi), SM-T311 (lt013g), SM-T315 (lt01lte)
+#Galaxy Tab 3 8.0: SM-T310 (lt01wifi), SM-T311 (lt013g), SM-T315 (lt01lte)
 else ifneq ($(filter $(TARGET_PRODUCT),cm_lt01wifi cm_lt013g cm_lt01lte),)
     TARGET_COMMON_NAME := Galaxy Tab 3 8.0 ($(TARGET_PRODUCT))
     BOOTLOADER_CMD_ARG := "download"
@@ -554,6 +562,8 @@ else ifneq ($(filter $(TARGET_PRODUCT),cm_crespo cm_crespo4g),)
 #Google Nexus 4 (LGE) - mako
 else ifeq ($(TARGET_PRODUCT), cm_mako)
     TARGET_COMMON_NAME := Nexus 4
+    KERNEL_EXFAT_MODULE_NAME := "exfat"
+    TARGET_USERIMAGES_USE_F2FS := true
     TARGET_SCREEN_HEIGHT := 1280
     TARGET_SCREEN_WIDTH := 768
     BRIGHTNESS_SYS_FILE := "/sys/class/leds/lcd-backlight/brightness"
@@ -576,6 +586,8 @@ else ifneq ($(filter $(TARGET_PRODUCT),cm_tilapia cm_grouper),)
 #Google Nexus 7 (ASUS) 2013 (flo), LTE (deb)
 else ifneq ($(filter $(TARGET_PRODUCT),cm_flo cm_deb),)
     TARGET_COMMON_NAME := Nexus 7 (2013 $(TARGET_PRODUCT))
+    KERNEL_EXFAT_MODULE_NAME := "exfat"
+    TARGET_USERIMAGES_USE_F2FS := true
     TARGET_SCREEN_HEIGHT := 1920
     TARGET_SCREEN_WIDTH := 1200
     BRIGHTNESS_SYS_FILE := "/sys/class/leds/lcd-backlight/brightness"

@@ -37,10 +37,17 @@ int ensure_path_mounted_at_mount_point(const char* path, const char* mount_point
 // success (volume is unmounted);
 int ensure_path_unmounted(const char* path);
 
+// rm -rf like in c/c++
+int rmtree_except(const char* path, const char* except);
+
 // Reformat the given volume (must be the mount point only, eg
 // "/cache"), no paths permitted.  Attempts to unmount the volume if
 // it is mounted.
 int format_volume(const char* volume);
+
+// Ensure that all and only the volumes that packages expect to find
+// mounted (/tmp and /cache) are mounted.  Returns 0 on success.
+int setup_install_mounts();
 
 char* get_primary_storage_path();
 char** get_extra_storage_paths();
@@ -52,7 +59,7 @@ int get_num_volumes();
 Volume* get_device_volumes();
 
 int is_data_media();
-void setup_data_media();
+void setup_data_media(int mount);
 int is_data_media_volume_path(const char* path);
 void preserve_data_media(int val);
 int is_data_media_preserved();
@@ -60,5 +67,13 @@ int is_data_media_preserved();
 #define MAX_NUM_MANAGED_VOLUMES 10
 
 int use_migrated_storage();
+
+// format device to custom fstype
+int format_device(const char *device, const char *path, const char *fs_type);
+
+// support format MTD, MMC, BML, ext2, ext3 and directory rm -rf like if a path is passed
+int format_unknown_device(const char *device, const char* path, const char *fs_type);
+
+char* get_real_fstype(const char* path);
 
 #endif  // RECOVERY_ROOTS_H_
