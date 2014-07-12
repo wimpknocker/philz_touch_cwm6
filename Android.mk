@@ -247,8 +247,7 @@ ALL_DEFAULT_INSTALLED_MODULES += $(RECOVERY_BUSYBOX_SYMLINKS)
 include $(CLEAR_VARS)
 LOCAL_MODULE := libreboot_static
 LOCAL_MODULE_TAGS := optional
-LOCAL_CFLAGS := -Dmain=reboot_main
-LOCAL_SRC_FILES := ../../system/core/reboot/reboot.c
+LOCAL_SRC_FILES := reboot.c
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
