@@ -283,7 +283,7 @@ Value* FormatFn(const char* name, State* state, int argc, Expr* argv[]) {
         const char* args[] = { "mkfs.f2fs", location };
         int status = make_f2fs_main(2, (char**)args);
         if (status != 0) {
-            fprintf(stderr, "%s: make_f2fs_main failed (%d) on %s",
+            printf("%s: make_f2fs_main failed (%d) on %s",
                 name, status, location);
             result = strdup("");
             goto done;
