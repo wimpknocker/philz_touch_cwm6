@@ -247,7 +247,12 @@ ALL_DEFAULT_INSTALLED_MODULES += $(RECOVERY_BUSYBOX_SYMLINKS)
 include $(CLEAR_VARS)
 LOCAL_MODULE := libreboot_static
 LOCAL_MODULE_TAGS := optional
+ifeq ($(ENABLE_BLACKHAWK_PATCH),true)
 LOCAL_SRC_FILES := reboot.c
+else
+LOCAL_CFLAGS := -Dmain=reboot_main
+LOCAL_SRC_FILES := ../../system/core/reboot/reboot.c
+endif
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
