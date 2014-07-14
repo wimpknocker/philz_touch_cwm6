@@ -38,7 +38,7 @@
 #include "advanced_functions.h"
 #include "recovery_settings.h"
 #include "nandroid.h"
-#include "mounts.h"
+#include "mtdutils/mounts.h"
 #include "edify/expr.h"
 
 
@@ -1829,7 +1829,7 @@ void handle_failure() {
     ui_print("Send file to Phil3759 @xda\n");
 }
 
-static int is_path_mounted(const char* path) {
+int is_path_mounted(const char* path) {
     Volume* v = volume_for_path(path);
     if (v == NULL) {
         return 0;
