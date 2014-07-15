@@ -1387,7 +1387,7 @@ void show_multi_flash_menu() {
 #ifdef PHILZ_TOUCH_RECOVERY
                         force_wait = -1;
 #endif
-                        if (install_zip(files[i - 2]) != 0)
+                        if (install_zip(files[i - 2]) != INSTALL_SUCCESS)
                             break;
                     }
                 }
@@ -1649,20 +1649,10 @@ int run_ors_script(const char* ors_script) {
                     }
                     ensure_path_mounted("/sd-ext");
                     ensure_path_mounted("/cache");
-                    if (no_wipe_confirm) {
-                        //do not confirm before wipe for scripts started at boot
-                        __system("rm -r /data/dalvik-cache");
-                        __system("rm -r /cache/dalvik-cache");
-                        __system("rm -r /sd-ext/dalvik-cache");
-                        ui_print("Dalvik Cache wiped.\n");
-                    } else {
-                        if (confirm_selection( "Confirm wipe?", "Yes - Wipe Dalvik Cache")) {
-                            __system("rm -r /data/dalvik-cache");
-                            __system("rm -r /cache/dalvik-cache");
-                            __system("rm -r /sd-ext/dalvik-cache");
-                            ui_print("Dalvik Cache wiped.\n");
-                        }
-                    }
+                    __system("rm -r /data/dalvik-cache");
+                    __system("rm -r /cache/dalvik-cache");
+                    __system("rm -r /sd-ext/dalvik-cache");
+                    ui_print("Dalvik Cache wiped.\n");
                     ensure_path_unmounted("/data");
                     ui_print("-- Dalvik Cache Wipe Complete!\n");
                 } else if (strcmp(value, "data") == 0 || strcmp(value, "/data") == 0 || strcmp(value, "factory") == 0 || strcmp(value, "factoryreset") == 0) {
@@ -1872,7 +1862,7 @@ static void choose_default_ors_menu(const char* volume_path) {
         return;
     }
 
-    static const char* headers[] = {
+    const char* headers[] = {
         "Choose a script to run",
         "",
         NULL
@@ -1909,7 +1899,7 @@ static void choose_custom_ors_menu(const char* volume_path) {
         return;
     }
 
-    static const char* headers[] = {"Choose .ors script to run", NULL};
+    const char* headers[] = {"Choose .ors script to run", NULL};
 
     char* ors_file = choose_file_menu(volume_path, ".ors", headers);
     if (ors_file == NULL)
