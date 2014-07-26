@@ -30,6 +30,9 @@
 #include <sys/stat.h>
 #include <errno.h>
 
+#include <sys/types.h>
+#include <fcntl.h>
+
 #include <selinux/selinux.h>
 #include <selinux/label.h>
 
@@ -57,16 +60,6 @@
 #ifdef PHILZ_TOUCH_RECOVERY
 #include "libtouch_gui/gui_settings.h"
 #endif
-
-/*****************************************/
-/*   DO NOT REMOVE THIS CREDITS HEARDER  */
-/* IF YOU MODIFY ANY PART OF THIS SOURCE */
-/*  YOU MUST AGREE TO SHARE THE CHANGES  */
-/*                                       */
-/*       Start PhilZ Menu settings       */
-/*      Code written by PhilZ@xda        */
-/*      Part of PhilZ Touch Recovery     */
-/*****************************************/
 
 extern struct selabel_handle *sehandle;
 
@@ -561,7 +554,6 @@ void stop_md5_verify_thread() {
 }
 // ------- End md5sum display
 
-
 /***********************************************/
 /* start wipe data and system options and menu */
 /***********************************************/
@@ -924,7 +916,6 @@ void show_multi_flash_menu() {
 }
 //-------- End Multi-Flash Zip code
 
-
 /*****************************************/
 /*   DO NOT REMOVE THIS CREDITS HEARDER  */
 /* IF YOU MODIFY ANY PART OF THIS SOURCE */
@@ -1020,7 +1011,6 @@ static void choose_ors_volume() {
             free(list[i + 1]);
     }
 }
-
 
 // Parse backup options in ors
 // Stock CWM as of v6.x, doesn't support backup options
@@ -1477,7 +1467,6 @@ static void show_custom_ors_menu() {
 }
 //----------end open recovery script support
 
-
 /**********************************/
 /*       Start Get ROM Name       */
 /*    Original source by PhilZ    */
@@ -1509,11 +1498,16 @@ static void format_filename(char *valid_path, int max_len) {
 // always call with rom_name[PROPERTY_VALUE_MAX]
 #define MAX_ROM_NAME_LENGTH 31
 void get_rom_name(char *rom_name) {
-    const char *rom_id_key[] = { "ro.modversion", "ro.romversion", "ro.build.display.id", NULL };
+    const char *rom_id_key[] = {
+        "ro.modversion",
+        "ro.romversion",
+        "ro.build.display.id",
+        NULL
+    };
     const char *key;
     int i = 0;
 
-    sprintf(rom_name, "noname");
+    strcpy(rom_name, "noname");
     while ((key = rom_id_key[i]) != NULL && strcmp(rom_name, "noname") == 0) {
         if (read_config_file("/system/build.prop", key, rom_name, "noname") < 0) {
             ui_print("failed to open /system/build.prop!\n");
@@ -1527,7 +1521,6 @@ void get_rom_name(char *rom_name) {
         format_filename(rom_name, MAX_ROM_NAME_LENGTH);
     }
 }
-
 
 /**********************************/
 /*   Misc Nandroid Settings Menu  */
@@ -1774,7 +1767,6 @@ void misc_nandroid_menu() {
     }
 }
 //-------- End Misc Nandroid Settings
-
 
 /****************************************/
 /*  Start Install Zip from custom path  */
@@ -3626,28 +3618,166 @@ void show_nandroid_delete_menu(const char* volume_path) {
 /****************************/
 /* Format and mount options */
 /****************************/
+#define MAX_NUM_USB_VOLUMES 2
+#define LUN_FILE_EXPANDS    2
+
+struct lun_node {
+    const char *lun_file;
+    struct lun_node *next;
+};
+
+static struct lun_node *lun_head = NULL;
+static struct lun_node *lun_tail = NULL;
+
+static int control_usb_storage_set_lun(Volume* vol, bool enable, const char *lun_file) {
+    const char *vol_device = enable ? vol->blk_device : "";
+    int fd;
+    struct lun_node *node;
+
+    // verify that we have not already used this LUN file
+    for(node = lun_head; node; node = node->next) {
+        if (strcmp(node->lun_file, lun_file) == 0) {
+            // skip any LUN files that are already in use
+            return -1;
+        }
+    }
+
+    // open a handle to the LUN file
+    LOGI("Trying %s on LUN file %s\n", vol->blk_device, lun_file);
+    if ((fd = open(lun_file, O_WRONLY)) < 0) {
+        LOGW("Unable to open ums lunfile %s (%s)\n", lun_file, strerror(errno));
+        return -1;
+    }
+
+    // write the volume path to the LUN file
+    if ((write(fd, vol_device, strlen(vol_device) + 1) < 0) &&
+       (!enable || !vol->blk_device2 || (write(fd, vol->blk_device2, strlen(vol->blk_device2)) < 0))) {
+        LOGW("Unable to write to ums lunfile %s (%s)\n", lun_file, strerror(errno));
+        close(fd);
+        return -1;
+    } else {
+        // volume path to LUN association succeeded
+        close(fd);
+
+        // save off a record of this lun_file being in use now
+        node = (struct lun_node *)malloc(sizeof(struct lun_node));
+        node->lun_file = strdup(lun_file);
+        node->next = NULL;
+        if (lun_head == NULL)
+           lun_head = lun_tail = node;
+        else {
+           lun_tail->next = node;
+           lun_tail = node;
+        }
+
+        LOGI("Successfully %s %s on LUN file %s\n", enable ? "shared" : "unshared", vol->blk_device, lun_file);
+        ui_print("%s (%s).\n", vol->mount_point, enable ? "shared" : "unshared");
+        return 0;
+    }
+}
+
+static int control_usb_storage_for_lun(Volume* vol, bool enable) {
+    const char* lun_files[] = {
+#ifdef BOARD_UMS_LUNFILE
+        BOARD_UMS_LUNFILE,
+#endif
+#ifdef TARGET_USE_CUSTOM_LUN_FILE_PATH
+        TARGET_USE_CUSTOM_LUN_FILE_PATH,
+#endif
+        "/sys/class/android_usb/android0/f_mass_storage/lun0/file",
+        "/sys/class/android_usb/android%d/f_mass_storage/lun/file",
+        "/sys/class/android_usb/android0/f_mass_storage/lun_ex/file",
+        "/sys/devices/platform/usb_mass_storage/lun%d/file",
+        "/sys/devices/platform/msm_hsusb/gadget/lun0/file",
+        "/sys/devices/virtual/android_usb/android0/f_mass_storage/lun",
+        NULL
+    };
+
+    // if recovery.fstab specifies a LUN file, use it (vol->lun no longer parsed by fs_mgr in kitkat)
+    if (vol->lun) {
+        return control_usb_storage_set_lun(vol, enable, vol->lun);
+    }
+
+    // try to find a LUN for this volume
+    //   - iterate through the lun file paths
+    //   - expand any %d by LUN_FILE_EXPANDS
+    int lun_num = 0;
+    int i;
+    for(i = 0; lun_files[i]; i++) {
+        const char *lun_file = lun_files[i];
+        for(lun_num = 0; lun_num < LUN_FILE_EXPANDS; lun_num++) {
+            char formatted_lun_file[255];
+    
+            // replace %d with the LUN number
+            bzero(formatted_lun_file, 255);
+            snprintf(formatted_lun_file, 254, lun_file, lun_num);
+    
+            // attempt to use the LUN file
+            if (control_usb_storage_set_lun(vol, enable, formatted_lun_file) == 0) {
+                return 0;
+            }
+        }
+    }
+
+    // all LUNs were exhausted and none worked
+    LOGW("Could not %sable %s on LUN %d\n", enable ? "en" : "dis", vol->blk_device, lun_num);
+
+    return -1;  // -1 failure, 0 success
+}
+
 // mount usb storage
-static int control_usb_storage(bool on) {
+static int control_usb_storage(bool enable) {
     int i = 0;
     int num = 0;
 
-    for (i = 0; i < get_num_volumes(); i++) {
+    for (i = 0; i < get_num_volumes(); ++i) {
         Volume *v = get_device_volumes() + i;
         if (fs_mgr_is_voldmanaged(v) && vold_is_volume_available(v->mount_point)) {
-            if (on) {
+            // Enable USB storage using vold
+            if (enable) {
                 vold_share_volume(v->mount_point);
             } else {
                 vold_unshare_volume(v->mount_point, 1);
             }
-            property_set("sys.storage.ums_enabled", on ? "1" : "0");
-            num++;
+            ++num;
         }
     }
-    return num;
+
+    if (num == 0) {
+        // Try to share non vold managed volume storage
+        // build a list of Volume objects; some or all may not be valid
+        Volume* volumes[MAX_NUM_USB_VOLUMES] = {
+            volume_for_path("/sdcard"),
+            volume_for_path("/external_sd"),
+        };
+
+        int i;
+        for(i = 0; i < MAX_NUM_USB_VOLUMES; ++i) {
+            Volume *v = volumes[i];
+            if (v && control_usb_storage_for_lun(v, enable) == 0) {
+                ++num; // if any one path succeeds, we return success
+            }
+        }
+
+        // Release memory used by the LUN file linked list
+        struct lun_node *node = lun_head;
+        while(node) {
+           struct lun_node *next = node->next;
+           free((void *)node->lun_file);
+           free(node);
+           node = next;
+        }
+        lun_head = lun_tail = NULL;
+    }
+
+    if (num) {
+        property_set("sys.storage.ums_enabled", enable ? "1" : "0");
+    }
+
+    return num != 0;
 }
 
 static void show_mount_usb_storage_menu() {
-    // Enable USB storage using vold
     if (!control_usb_storage(true))
         return;
 
@@ -4011,6 +4141,10 @@ int show_partition_mounts_menu() {
             if (!vold_is_volume_available(v->mount_point))
                 continue;
             is_vold_ums_capable = 1;
+        } else if (strcmp(v->mount_point, "/external_sd") == 0) {
+            is_vold_ums_capable = 1;
+        } else if (!is_data_media() && strcmp(v->mount_point, "/sdcard") == 0) {
+            is_vold_ums_capable = 1;
         }
 
         MFMatrix mfm = { v->mount_point, v->fs_type, 1, 1 };
@@ -4064,7 +4198,7 @@ int show_partition_mounts_menu() {
         } else {
             // chosen_item == mountable_volumes && is_vold_ums_capable
             show_mount_usb_storage_menu();
-        } 
+        }
     }
 
     return chosen_item;
@@ -4458,7 +4592,6 @@ void show_advanced_menu() {
 
     for (;;) {
         if (is_data_media()) {
-            ensure_path_mounted("/data");
             if (use_migrated_storage())
                 list[6] = "Sdcard target: /data/media/0";
             else list[6] = "Sdcard target: /data/media";
@@ -4556,17 +4689,19 @@ void show_advanced_menu() {
                 break;
             }
             case 6: {
-                if (is_data_media()) {
-                    // /data is mounted above in the for() loop: we can directly call use_migrated_storage()
+                if (is_data_media() && ensure_path_mounted("/data") == 0) {
                     if (use_migrated_storage()) {
                         write_string_to_file("/data/media/.cwm_force_data_media", "1");
                         ui_print("storage set to /data/media\n");
                     } else {
-                        mkdir("/data/media/0", S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH); 
+                        // For devices compiled with BOARD_HAS_NO_MULTIUSER_SUPPORT := true, create /data/media/0
+                        // to force using it when calling check_migrated_storage() through setup_data_media()
+                        ensure_directory("/data/media/0", S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
                         delete_a_file("/data/media/.cwm_force_data_media");
                         ui_print("storage set to /data/media/0\n");
                     }
-                    setup_data_media(0); // /data is mounted above in the for() loop. No need to mount/unmount on call
+                    // recreate /sdcard link
+                    setup_data_media(0); // /data is mounted above. No need to mount/unmount on call
                     ui_print("Reboot to apply settings!\n");
                 }
                 break;

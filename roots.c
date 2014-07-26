@@ -225,7 +225,10 @@ static void write_fstab_entry(Volume *v, FILE *file)
         // special case rfs cause auto will mount it as vfat on samsung.
         // use real fstype if it is an f2fs/ext4 conversion
         char* fstype = v->fs_type;
-        if (v->fs_type2 != NULL && strcmp(v->fs_type, "rfs") != 0 && strcmp(v->fs_type, "f2fs") != 0 && strcmp(v->fs_type2, "f2fs") != 0) {
+        if (v->fs_type2 != NULL) {
+            if (strcmp(v->fs_type, "rfs") != 0 && 
+                !(strcmp(v->fs_type, "f2fs") == 0 && strcmp(v->fs_type2, "ext4") == 0) &&
+                !(strcmp(v->fs_type, "ext4") == 0 && strcmp(v->fs_type2, "f2fs") == 0))
             fstype = "auto";
         }
         fprintf(file, "%s defaults\n", fstype);
@@ -238,6 +241,12 @@ int get_num_volumes() {
 
 Volume* get_device_volumes() {
     return fstab->recs;
+}
+
+static int is_datamedia = 0;
+int is_data_media()
+{
+    return is_datamedia;
 }
 
 void load_volume_table()
@@ -347,27 +356,36 @@ void load_volume_table()
         LOGW("Unable to create /etc/fstab!\n");
     }
 
-    fprintf(stderr, "recovery filesystem table\n");
-    fprintf(stderr, "=========================\n");
+    is_datamedia = 1;
+
+    printf("recovery filesystem table\n");
+    printf("=========================\n");
     for (i = 0; i < fstab->num_entries; ++i) {
         Volume* v = &fstab->recs[i];
-
-        fprintf(stderr, "  %d %s %s %s %lld\n", i, v->mount_point, v->fs_type,
+        printf("  %d %s %s %s %lld\n", i, v->mount_point, v->fs_type,
                 v->blk_device, v->length);
         if (v->blk_device2 != NULL) {
             // print extra volume table
-            fprintf(stderr, "    %s %s %s %lld\n", v->mount_point, v->fs_type2,
+            printf("    %s %s %s %lld\n", v->mount_point, v->fs_type2,
                     v->blk_device2, v->length);
         }
 
         write_fstab_entry(v, file);
+
+        // https://source.android.com/devices/tech/storage/config-example.html
+        if (strcmp(v->mount_point, "/mnt/media_rw/sdcard0") == 0 ||
+                (strcmp(v->mount_point, "/sdcard") == 0 && strcmp(v->fs_type, "datamedia") != 0) ||
+                (fs_mgr_is_voldmanaged(v) && strcmp(v->label, "sdcard0") == 0)) {
+            is_datamedia = 0;
+        }
     }
 
     if (file != NULL)
         fclose(file);
 
-    fprintf(stderr, "\n");
+    printf("\n");
 }
+
 
 Volume* volume_for_path(const char* path) {
     return fs_mgr_get_entry_for_mount_point(fstab, path);
@@ -438,7 +456,11 @@ int try_mount(const char* device, const char* mount_point, const char* fs_type, 
     if (device == NULL || mount_point == NULL || fs_type == NULL)
         return -1;
     int ret = 0;
-    if (fs_options == NULL) {
+    if (strcmp(fs_type, "auto") == 0) {
+        char mount_cmd[PATH_MAX];
+        sprintf(mount_cmd, "mount %s %s", device, mount_point);
+        ret = __system(mount_cmd);
+    } else if (fs_options == NULL) {
         ret = mount(device, mount_point, fs_type,
                        MS_NOATIME | MS_NODEV | MS_NODIRATIME, "");
         // LOGE("ret =%d - device=%s - mount_point=%s - fstype=%s\n", ret, device, mount_point, fs_type); // debug
@@ -458,41 +480,38 @@ int try_mount(const char* device, const char* mount_point, const char* fs_type, 
 - When upgrading to android 4.2, /data/media content is "migrated" to /data/media/0
 - In recovery, we force use of /data/media instead of /data/media/0 for internal storage if /data/media/.cwm_force_data_media file is found
 - For devices with pre-4.2 android support, we can define BOARD_HAS_NO_MULTIUSER_SUPPORT flag to default to /data/media, unless /data/media/0 exists
-- If we call use_migrated_storage() directly, we need to ensure_path_mounted("/data") before
-- On recovery start, no need to mount /data before as use_migrated_storage() is called by setup_data_media(mount = true)
+- If we call check_migrated_storage() directly, we need to ensure_path_mounted("/data") before
+- On recovery start, we first call load_volume_table() then setup_data_media(mount = true)
+- setup_data_media(mount = true) will mount /data, call check_migrated_storage() then unmount /data
 */
-int use_migrated_storage() {
-    struct stat s;
 #ifdef BOARD_HAS_NO_MULTIUSER_SUPPORT
-    return lstat("/data/media/0", &s) == 0 &&
-            lstat("/data/media/.cwm_force_data_media", &s) != 0;
+static int is_migrated_storage = 0;
 #else
-    return lstat("/data/media/.cwm_force_data_media", &s) != 0;
+static int is_migrated_storage = 1;
 #endif
+
+int use_migrated_storage() {
+    return is_migrated_storage;
 }
 
-int is_data_media() {
-    int i;
-    int has_sdcard = 0;
-    for (i = 0; i < get_num_volumes(); i++) {
-        Volume* vol = get_device_volumes() + i;
-        if (strcmp(vol->fs_type, "datamedia") == 0)
-            return 1;
-        if (strcmp(vol->mount_point, "/sdcard") == 0)
-            has_sdcard = 1;
-        if (fs_mgr_is_voldmanaged(vol) &&
-                (strcmp(vol->mount_point, "/storage/sdcard0") == 0))
-            has_sdcard = 1;
-    }
-    return !has_sdcard;
+static int check_migrated_storage() {
+    struct stat s;
+#ifdef BOARD_HAS_NO_MULTIUSER_SUPPORT
+    is_migrated_storage = (lstat("/data/media/0", &s) == 0 &&
+                          lstat("/data/media/.cwm_force_data_media", &s) != 0);
+#else
+    is_migrated_storage = (lstat("/data/media/.cwm_force_data_media", &s) != 0);
+#endif
+    return is_migrated_storage;
 }
 
 // load_volume_table() must have been called at this stage, so we can use ensure_path_mounted()
+// data partition must be mounted if we pass in argument mount = 0
 // setup_data_media() is either called by:
-//  - ensure_path_mounted() which will mount /data or
+//  - ensure_path_mounted() which will mount /data
 //  - on recovery start AFTER load_volume_table() AND with mount = true argument (setup_data_media(mount = true))
 //  - in show_advanced_menu() to toggle /data/media target
-//  - in show_partition_menu() after formatting whole partition to recreate the link
+//  - in show_partition_menu() and show_format_ext4_or_f2fs_menu() after format /data to recreate sdcard link
 void setup_data_media(int mount) {
     if (!is_data_media())
         return;
@@ -513,7 +532,7 @@ void setup_data_media(int mount) {
 
     int i;
     char* mount_point = "/sdcard";
-    for (i = 0; i < get_num_volumes(); i++) {
+    for (i = 0; i < get_num_volumes(); ++i) {
         Volume* vol = get_device_volumes() + i;
         if (strcmp(vol->fs_type, "datamedia") == 0) {
             mount_point = vol->mount_point;
@@ -527,7 +546,7 @@ void setup_data_media(int mount) {
 
     // support /data/media/0 (Android 4.2+)
     char* path = "/data/media";
-    if (use_migrated_storage()) {
+    if (check_migrated_storage()) {
         path = "/data/media/0";
         mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
     }
@@ -604,7 +623,7 @@ int ensure_path_mounted_at_mount_point(const char* path, const char* mount_point
         return -1;
     }
 
-    if (NULL == mount_point)
+    if (mount_point == NULL)
         mount_point = v->mount_point;
 
     const MountedVolume* mv =
@@ -632,7 +651,8 @@ int ensure_path_mounted_at_mount_point(const char* path, const char* mount_point
             return -1;
         }
         return mtd_mount_partition(partition, mount_point, v->fs_type, 0);
-    } else if (strcmp(v->fs_type, "ext4") == 0 ||
+    } else if (strcmp(v->fs_type, "auto") == 0 || 
+               strcmp(v->fs_type, "ext4") == 0 ||
                strcmp(v->fs_type, "ext3") == 0 ||
 #ifdef USE_F2FS
                strcmp(v->fs_type, "f2fs") == 0 ||
@@ -642,17 +662,11 @@ int ensure_path_mounted_at_mount_point(const char* path, const char* mount_point
         // LOGE("main pass: %s %s %s %s\n", v->blk_device, mount_point, v->fs_type, v->fs_type2); // debug
         if ((result = try_mount(v->blk_device, mount_point, v->fs_type, v->fs_options)) == 0)
             return 0;
-        if ((result = try_mount(v->blk_device, mount_point, v->fs_type2, v->fs_options2)) == 0)
-            return 0;
         if ((result = try_mount(v->blk_device2, mount_point, v->fs_type2, v->fs_options2)) == 0)
             return 0;
+        if ((result = try_mount(v->blk_device, mount_point, v->fs_type2, v->fs_options2)) == 0)
+            return 0;
         return result;
-    } else if (strcmp(v->fs_type, "auto") == 0) {
-        // either we are using fstab with non vold managed external storage or vold failed to mount a storage (ext2/ext4, some vfat systems)
-        // on vold managed devices, we need the blk_device2
-        char mount_cmd[PATH_MAX];
-        sprintf(mount_cmd, "mount %s %s", v->blk_device2 != NULL ? v->blk_device2 : v->blk_device, mount_point);
-        return __system(mount_cmd);
     } else {
         // let's try mounting with the mount binary and hope for the best.
         // case called by ensure_path_mounted_at_mount_point("/emmc", "/sdcard") in edifyscripting.c (this now obsolete)
