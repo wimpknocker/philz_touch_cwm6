@@ -37,7 +37,7 @@
 #   - BOARD_HAS_SLOW_STORAGE := true
 #                               when defined, size progress info during backup/restore will be disabled on default settings
 #   - BOARD_HAS_NO_FB2PNG := true
-#                               define this to disable fb2png support and spare some space (do not use screen capture)
+#                               define this to disable fb2png shell support and spare some space (do not use screen capture in adb shell)
 #   - BOARD_USE_NTFS_3G := false
 #                               will not include ntfs-3g binary to format and mount NTFS partitions. This can spare about 300kb space
 #                               devices using NTFS kernel modules will still be able to mount NTFS but not format to NTFS

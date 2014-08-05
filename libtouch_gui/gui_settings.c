@@ -1463,14 +1463,9 @@ static void change_menu_color() {
 /**********************************/
 /*   Start touch gesture actions  */
 /**********************************/
-// capture screen using fb2png and incremental file names
+// capture screen to incremental file names
 // prefer second storage paths first, then primary storage
-static void fb2png_shot() {
-    if (!libtouch_flags.board_use_fb2png) {
-        LOGE("fb2png not supported on this device!\n");
-        return;
-    }
-
+static void screen_shot() {
     char* sd_path = NULL;
     char** extra_paths = get_extra_storage_paths();
     int num_extra_volumes = get_num_extra_volumes();
@@ -1514,14 +1509,14 @@ static void fb2png_shot() {
     char dirtmp[PATH_MAX];
     sprintf(dirtmp, "%s", DirName(tmp));
     ensure_directory(dirtmp, 0755);
-    sprintf(tmp, "fb2png %s/%s/cwm_screen%03ld.png", sd_path, SCREEN_CAPTURE_FOLDER, file_num);
-    if (0 == __system(tmp)) {
-        ui_print("screen shot: %s\n", tmp + 7); // strlen("fb2png ")
+    sprintf(tmp, "%s/%s/cwm_screen%03ld.png", sd_path, SCREEN_CAPTURE_FOLDER, file_num);
+    if (gr_save_screenshot(tmp) == 0) {
+        ui_print("screen shot: %s\n", tmp);
         sprintf(tmp, "%s/%s/index", sd_path, SCREEN_CAPTURE_FOLDER);
         sprintf(line, "%ld", file_num);
         write_string_to_file(tmp, line);
     } else {
-        ui_print("screen capture failed\n");
+        LOGE("screen capture failed\n");
     }
     free_string_array(extra_paths);
 }
@@ -1530,7 +1525,7 @@ static void fb2png_shot() {
 //  - they are only triggered when in a menu prompt view (get_menu_selection())
 //  - we also disable them if progress bar is being shown
 //    this can happen in md5 display/verify threads where we have progress bar while waiting for menu action
-//    fb2png and brightness actions call unsafe thread functions: basename, dirname, ensure_path_mounted()
+//    screen capture and brightness actions call unsafe thread functions: basename, dirname, ensure_path_mounted()
 void handle_gesture_actions(const char** headers, char** items, int initial_selection) {
     int action = DISABLE_ACTION;
     if (ui_showing_progress_bar())
@@ -1548,7 +1543,7 @@ void handle_gesture_actions(const char** headers, char** items, int initial_sele
 
     switch (action) {
         case SCREEN_CAPTURE_ACTION:
-            fb2png_shot();
+            screen_shot();
             break;
         case AROMA_BROWSER_ACTION:
             ui_end_menu();
