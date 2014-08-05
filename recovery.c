@@ -42,7 +42,7 @@
 #include "common.h"
 #include "install.h"
 #include "roots.h"
-#include "recovery.h"
+#include "recovery_ui.h"
 #include "adb_install.h"
 #include "recovery_cmds.h"
 #include "edifyscripting.h"
@@ -849,6 +849,7 @@ wipe_data(int confirm) {
             sprintf(buf, "%s/.android_secure", extra_paths[i]);
             erase_volume(buf);
         }
+        free_string_array(extra_paths);
     }
     ui_print("Data wipe complete.\n");
 }
@@ -966,7 +967,7 @@ prompt_and_wait(int status) {
                     ret = show_nandroid_menu();
                     break;
 
-                case ITEM_MOUNTS:
+                case ITEM_PARTITION:
                     ret = show_partition_mounts_menu();
                     break;
 
@@ -1024,9 +1025,7 @@ setup_adbd() {
             check_and_fclose(file_src, key_src);
         }
     }
-    preserve_data_media(0);
     ensure_path_unmounted("/data");
-    preserve_data_media(1);
 
     // Trigger (re)start of adb daemon
     property_set("service.adb.root", "1");
@@ -1277,9 +1276,7 @@ main(int argc, char **argv) {
         }
     } else if (wipe_data) {
         if (device_wipe_data()) status = INSTALL_ERROR;
-        preserve_data_media(0);
         if (erase_volume("/data")) status = INSTALL_ERROR;
-        preserve_data_media(1);
         if (has_datadata() && erase_volume("/datadata")) status = INSTALL_ERROR;
         if (wipe_cache && erase_volume("/cache")) status = INSTALL_ERROR;
         if (status != INSTALL_SUCCESS) ui_print("Data wipe failed.\n");

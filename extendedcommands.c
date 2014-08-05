@@ -28,6 +28,7 @@
 #include <sys/limits.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <errno.h>
 
 #include <sys/types.h>
@@ -44,7 +45,7 @@
 #include "common.h"
 #include "install.h"
 #include "make_ext4fs.h"
-#include "recovery.h"
+#include "recovery_ui.h"
 #include "roots.h"
 #include "ui.h"
 #include "extendedcommands.h"
@@ -591,6 +592,7 @@ static void show_partition_sdcard_menu() {
 
     if (list_index == 0) {
         LOGE("no volumes found to partition.\n");
+        free_string_array(extra_paths);
         return;
     }
 
@@ -670,6 +672,7 @@ static void show_partition_sdcard_menu() {
 
 out:
     free_string_array(list);
+    free_string_array(extra_paths);
 }
 
 void wipe_data_menu() {
@@ -705,6 +708,7 @@ void wipe_data_menu() {
                 break;
             }
         }
+        free_string_array(extra_paths);
     }
     if (can_partition_volumes)
         list[6] = "Partition sdcard (sd-ext support)";
@@ -840,6 +844,7 @@ void show_multi_flash_menu() {
             }
             i++;
         }
+        free_string_array(extra_paths);
     }
 
     // either MULTI_ZIP_FOLDER path not found (ui_print help)
@@ -1007,6 +1012,7 @@ static void choose_ors_volume() {
 
     free(list[0]);
     if (extra_paths != NULL) {
+        free_string_array(extra_paths);
         for(i = 0; i < num_extra_volumes; i++)
             free(list[i + 1]);
     }
@@ -1451,16 +1457,17 @@ static void show_custom_ors_menu() {
     list[num_extra_volumes + 1] = NULL;
 
     int chosen_item;
-    for (;;)
-    {
+    for (;;) {
         chosen_item = get_menu_selection(headers, list, 0, 0);
         if (chosen_item == GO_BACK || chosen_item == REFRESH)
             break;
+
         choose_custom_ors_menu(list[chosen_item] + strlen(list_prefix));
     }
 
     free(list[0]);
     if (extra_paths != NULL) {
+        free_string_array(extra_paths);
         for(i = 0; i < num_extra_volumes; i++)
             free(list[i + 1]);
     }
@@ -1577,6 +1584,7 @@ static void regenerate_md5_sum_menu() {
 out:
     free(list[0]);
     if (extra_paths != NULL) {
+        free_string_array(extra_paths);
         for(i = 0; i < num_extra_volumes; i++)
             free(list[i + 1]);
     }
@@ -1914,6 +1922,7 @@ out:
     // free(list_main[0]);
     free(list_main[1]);
     if (extra_paths != NULL) {
+        free_string_array(extra_paths);
         for(i = 0; i < num_extra_volumes; i++)
             free(list_main[i + list_top_items]);
     }
@@ -2172,6 +2181,7 @@ int set_android_secure_path(char *and_sec_path) {
                 path = buf;
             i++;
         }
+        free_string_array(extra_paths);
     }
 
     // assign primary storage (/sdcard) only if not datamedia and we did not find .android_secure in external storage
@@ -3219,6 +3229,7 @@ void run_aroma_browser() {
             ret = default_aromafm(extra_paths[i]);
             ++i;
         }
+        free_string_array(extra_paths);
     }
     if (ret != 0)
         ui_print("No %s in storage paths\n", AROMA_FM_PATH);
@@ -3522,6 +3533,7 @@ out:
     // free all the dynamic items
     free(install_menu_items[0]);
     if (extra_paths != NULL) {
+        free_string_array(extra_paths);
         for (i = 0; i < num_extra_volumes; i++)
             free(install_menu_items[FIXED_TOP_INSTALL_ZIP_MENUS + i]);
     }
@@ -3618,7 +3630,6 @@ void show_nandroid_delete_menu(const char* volume_path) {
 /****************************/
 /* Format and mount options */
 /****************************/
-#define MAX_NUM_USB_VOLUMES 2
 #define LUN_FILE_EXPANDS    2
 
 struct lun_node {
@@ -3629,54 +3640,69 @@ struct lun_node {
 static struct lun_node *lun_head = NULL;
 static struct lun_node *lun_tail = NULL;
 
-static int control_usb_storage_set_lun(Volume* vol, bool enable, const char *lun_file) {
-    const char *vol_device = enable ? vol->blk_device : "";
-    int fd;
+static bool vold_volume_uses_legacy_lun(Volume* vol) {
+    if (vol != NULL &&
+            fs_mgr_is_voldmanaged(vol) && vold_is_volume_available(vol->mount_point) &&
+            vol->blk_device2 != NULL && strcmp(vol->blk_device2, vol->blk_device) != 0)
+        return true;
+    return false;
+}
+
+static int control_usb_storage_set_lun(Volume* vol, const char *lun_file, bool enable) {
     struct lun_node *node;
+    FILE* fp;
 
     // verify that we have not already used this LUN file
-    for(node = lun_head; node; node = node->next) {
+    for (node = lun_head; node; node = node->next) {
         if (strcmp(node->lun_file, lun_file) == 0) {
             // skip any LUN files that are already in use
             return -1;
         }
     }
 
-    // open a handle to the LUN file
-    LOGI("Trying %s on LUN file %s\n", vol->blk_device, lun_file);
-    if ((fd = open(lun_file, O_WRONLY)) < 0) {
+    // open a handle to the LUN file. If !enable, it will discard its contents and we do not write it
+    LOGI("Trying %s on LUN file %s\n", vol->mount_point, lun_file);
+    if ((fp = fopen(lun_file, "w")) == NULL) {
         LOGW("Unable to open ums lunfile %s (%s)\n", lun_file, strerror(errno));
         return -1;
     }
 
     // write the volume path to the LUN file
-    if ((write(fd, vol_device, strlen(vol_device) + 1) < 0) &&
-       (!enable || !vol->blk_device2 || (write(fd, vol->blk_device2, strlen(vol->blk_device2)) < 0))) {
-        LOGW("Unable to write to ums lunfile %s (%s)\n", lun_file, strerror(errno));
-        close(fd);
-        return -1;
-    } else {
-        // volume path to LUN association succeeded
-        close(fd);
-
-        // save off a record of this lun_file being in use now
-        node = (struct lun_node *)malloc(sizeof(struct lun_node));
-        node->lun_file = strdup(lun_file);
-        node->next = NULL;
-        if (lun_head == NULL)
-           lun_head = lun_tail = node;
-        else {
-           lun_tail->next = node;
-           lun_tail = node;
+    struct statfs info;
+    char* device = vol->blk_device;
+    if (enable) {
+        if (statfs(device, &info) != 0 || fwrite(device, 1, strlen(device), fp) != strlen(device)) {
+            device = vol->blk_device2;
+            if (device == NULL || statfs(device, &info) != 0 || fwrite(device, 1, strlen(device), fp) != strlen(device)) {
+                LOGW("Unable to write to ums lunfile %s (%s)\n", lun_file, strerror(errno));
+                fclose(fp);
+                return -1;
+            }
         }
-
-        LOGI("Successfully %s %s on LUN file %s\n", enable ? "shared" : "unshared", vol->blk_device, lun_file);
-        ui_print("%s (%s).\n", vol->mount_point, enable ? "shared" : "unshared");
-        return 0;
     }
+    fclose(fp);
+
+    // volume path to LUN association succeeded
+    // save off a record of this lun_file being in use now
+    node = (struct lun_node *)malloc(sizeof(struct lun_node));
+    node->lun_file = strdup(lun_file);
+    node->next = NULL;
+    if (lun_head == NULL)
+       lun_head = lun_tail = node;
+    else {
+       lun_tail->next = node;
+       lun_tail = node;
+    }
+
+    LOGI("Successfully %s '%s' on LUN file '%s'\n", enable ? "shared" : "unshared", enable ? device : vol->mount_point, lun_file);
+    ui_print("%s (%s).\n", vol->mount_point, enable ? "shared" : "unshared");
+    return 0;
 }
 
 static int control_usb_storage_for_lun(Volume* vol, bool enable) {
+    if (vol == NULL || ensure_path_unmounted(vol->mount_point) != 0)
+        return -1;
+
     const char* lun_files[] = {
 #ifdef BOARD_UMS_LUNFILE
         BOARD_UMS_LUNFILE,
@@ -3695,7 +3721,7 @@ static int control_usb_storage_for_lun(Volume* vol, bool enable) {
 
     // if recovery.fstab specifies a LUN file, use it (vol->lun no longer parsed by fs_mgr in kitkat)
     if (vol->lun) {
-        return control_usb_storage_set_lun(vol, enable, vol->lun);
+        return control_usb_storage_set_lun(vol, vol->lun, enable);
     }
 
     // try to find a LUN for this volume
@@ -3703,9 +3729,9 @@ static int control_usb_storage_for_lun(Volume* vol, bool enable) {
     //   - expand any %d by LUN_FILE_EXPANDS
     int lun_num = 0;
     int i;
-    for(i = 0; lun_files[i]; i++) {
+    for (i = 0; lun_files[i]; i++) {
         const char *lun_file = lun_files[i];
-        for(lun_num = 0; lun_num < LUN_FILE_EXPANDS; lun_num++) {
+        for(lun_num = 0; lun_num < LUN_FILE_EXPANDS; ++lun_num) {
             char formatted_lun_file[255];
     
             // replace %d with the LUN number
@@ -3713,66 +3739,82 @@ static int control_usb_storage_for_lun(Volume* vol, bool enable) {
             snprintf(formatted_lun_file, 254, lun_file, lun_num);
     
             // attempt to use the LUN file
-            if (control_usb_storage_set_lun(vol, enable, formatted_lun_file) == 0) {
+            if (control_usb_storage_set_lun(vol, formatted_lun_file, enable) == 0) {
                 return 0;
             }
         }
     }
 
     // all LUNs were exhausted and none worked
-    LOGW("Could not %sable %s on LUN %d\n", enable ? "en" : "dis", vol->blk_device, lun_num);
+    LOGW("Could not %s %s on LUN %d\n", enable ? "enable" : "disable", vol->blk_device, lun_num);
 
     return -1;  // -1 failure, 0 success
 }
 
-// mount usb storage
+// Enable USB storage
+// if we have a valid blk_device2, try to use legacy mode rather than vold to share the volume
+// this improves transfer speed up to 10x depending on the file system
 static int control_usb_storage(bool enable) {
     int i = 0;
     int num = 0;
+    int num_extra_volumes = get_num_extra_volumes();
+    char** extra_paths = get_extra_storage_paths();
+    Volume* vol[num_extra_volumes + 1];
 
-    for (i = 0; i < get_num_volumes(); ++i) {
-        Volume *v = get_device_volumes() + i;
-        if (fs_mgr_is_voldmanaged(v) && vold_is_volume_available(v->mount_point)) {
-            // Enable USB storage using vold
-            if (enable) {
-                vold_share_volume(v->mount_point);
+    // initialisze volumes list to NULL (extra volumes + primary volume)
+    for (i = 0; i < num_extra_volumes + 1; ++i) {
+        vol[i] = NULL;
+    }
+
+    // assign vol list to extra storage volumes
+    i = 0;
+    if (extra_paths != NULL) {
+        for (i = 0; i < num_extra_volumes; ++i) {
+            vol[i] = volume_for_path(extra_paths[i]);
+        }
+        free_string_array(extra_paths);
+    }
+
+    // assign primary storage volume if it is a physical volume
+    vol[i] = volume_for_path(get_primary_storage_path());
+    if (!is_volume_primary_storage(vol[i]))
+        vol[i] = NULL;
+
+    for (i = 0; i < num_extra_volumes + 1; ++i) {
+        if (vol[i] == NULL)
+            continue;
+
+        if (fs_mgr_is_voldmanaged(vol[i])) {
+            if (!vold_is_volume_available(vol[i]->mount_point))
+                continue;
+
+            // if we have a valid blk_device2, try to use legacy mode rather than vold to share the volume
+            if (vold_volume_uses_legacy_lun(vol[i])) {
+                if (control_usb_storage_for_lun(vol[i], enable) == 0)
+                    ++num;
+                continue;
+            } else if (enable) {
+                vold_share_volume(vol[i]->mount_point);
             } else {
-                vold_unshare_volume(v->mount_point, 1);
+                vold_unshare_volume(vol[i]->mount_point, 1);
             }
             ++num;
-        }
+        } else if (control_usb_storage_for_lun(vol[i], enable) == 0) {
+            ++num;
+        }        
     }
-
-    if (num == 0) {
-        // Try to share non vold managed volume storage
-        // build a list of Volume objects; some or all may not be valid
-        Volume* volumes[MAX_NUM_USB_VOLUMES] = {
-            volume_for_path("/sdcard"),
-            volume_for_path("/external_sd"),
-        };
-
-        int i;
-        for(i = 0; i < MAX_NUM_USB_VOLUMES; ++i) {
-            Volume *v = volumes[i];
-            if (v && control_usb_storage_for_lun(v, enable) == 0) {
-                ++num; // if any one path succeeds, we return success
-            }
-        }
-
-        // Release memory used by the LUN file linked list
-        struct lun_node *node = lun_head;
-        while(node) {
-           struct lun_node *next = node->next;
-           free((void *)node->lun_file);
-           free(node);
-           node = next;
-        }
-        lun_head = lun_tail = NULL;
+    
+    // Release memory used by the LUN file linked list
+    struct lun_node *node = lun_head;
+    while (node) {
+       struct lun_node *next = node->next;
+       free((void *)node->lun_file);
+       free(node);
+       node = next;
     }
+    lun_head = lun_tail = NULL;
 
-    if (num) {
-        property_set("sys.storage.ums_enabled", enable ? "1" : "0");
-    }
+    property_set("sys.storage.ums_enabled", enable && num ? "1" : "0");
 
     return num != 0;
 }
@@ -4116,7 +4158,7 @@ void show_partition_format_menu() {
 }
 
 int show_partition_mounts_menu() {
-    const char* headers[] = { "Mounts and Storage Menu", NULL };
+    const char* headers[] = { "Mounts and Storage", NULL };
     char* list[256];
 
     int i = 0;
@@ -4137,13 +4179,12 @@ int show_partition_mounts_menu() {
     for (i = 0; i < num_volumes; i++) {
         Volume* v = get_device_volumes() + i;
 
-        if (fs_mgr_is_voldmanaged(v)) {
-            if (!vold_is_volume_available(v->mount_point))
+        if (is_data_media_volume_path(v->mount_point)) {
+            // do not show mount/unmount /sdcard on /data/media devices (when recovery.fstab entry with fs_type == "datamedia")
+            continue;
+        } else if (fs_mgr_is_voldmanaged(v) && !vold_is_volume_available(v->mount_point)) {
                 continue;
-            is_vold_ums_capable = 1;
-        } else if (strcmp(v->mount_point, "/external_sd") == 0) {
-            is_vold_ums_capable = 1;
-        } else if (!is_data_media() && strcmp(v->mount_point, "/sdcard") == 0) {
+        } else if (is_volume_primary_storage(v) || is_volume_extra_storage(v)) {
             is_vold_ums_capable = 1;
         }
 
@@ -4190,7 +4231,6 @@ int show_partition_mounts_menu() {
                 preserve_data_media(0);
                 if (0 != ensure_path_unmounted(e->path))
                     LOGE("Error unmounting %s!\n", e->path);
-                preserve_data_media(1);
             } else {
                 if (0 != ensure_path_mounted(e->path))
                     LOGE("Error mounting %s!\n", e->path);
@@ -4222,6 +4262,7 @@ static void run_dedupe_gc() {
             sprintf(path, fmt, extra_paths[i]);
             nandroid_dedupe_gc(path);
         }
+        free_string_array(extra_paths);
     }
 }
 
@@ -4403,6 +4444,7 @@ int show_nandroid_menu() {
         }
     }
 out:
+    free_string_array(extra_paths);
     for (i = 0; i < action_entries_num; i++)
         free(list[i]);
     return chosen_item;
@@ -4418,7 +4460,7 @@ int can_partition(const char* path) {
         return 0;
     }
     if (strcmp(vol->fs_type, "auto") != 0) {
-        LOGI("Can't partition non-vfat: %s (%s)\n", path, vol->fs_type);
+        LOGI("cannot partition non auto filesystem: %s (%s)\n", path, vol->fs_type);
         return 0;
     }
 
@@ -4639,6 +4681,7 @@ void show_advanced_menu() {
                         choose_default_ors_menu(extra_paths[i]);
                         i++;
                     }
+                    free_string_array(extra_paths);
                 }
 
                 if (browse_for_file) {

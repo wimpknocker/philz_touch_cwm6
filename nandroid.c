@@ -30,7 +30,7 @@
 #include "minui/minui.h"
 #include "minzip/DirUtil.h"
 #include "roots.h"
-#include "recovery.h"
+#include "recovery_ui.h"
 
 #include "cutils/android_reboot.h"
 
@@ -526,16 +526,7 @@ int nandroid_backup(const char* backup_path) {
     if (ensure_path_mounted(backup_path) != 0) {
         return print_and_error("Can't mount backup path.\n", NANDROID_ERROR_GENERAL);
     }
-/*
-    // replaced by Get_Size_Via_statfs() check
-    Volume* volume;
-    if (is_data_media_volume_path(backup_path))
-        volume = volume_for_path("/data");
-    else
-        volume = volume_for_path(backup_path);
-    if (NULL == volume)
-        return print_and_error("Unable to find volume for backup path.\n", NANDROID_ERROR_GENERAL);
-*/
+
     int ret;
     struct statfs s;
 
@@ -576,7 +567,7 @@ int nandroid_backup(const char* backup_path) {
 #endif
 
     Volume *vol = volume_for_path("/wimax");
-    if (backup_wimax && vol != NULL && 0 == statfs(vol->blk_device, &s)) {
+    if (backup_wimax && vol != NULL && statfs(vol->blk_device, &s) == 0) {
         char serialno[PROPERTY_VALUE_MAX];
         ui_print("\n>> Backing up WiMAX...\n");
         serialno[0] = 0;

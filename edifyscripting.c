@@ -46,7 +46,7 @@
 #include "common.h"
 #include "install.h"
 #include "roots.h"
-#include "recovery.h"
+#include "recovery_ui.h"
 #include "extendedcommands.h"
 #include "recovery_settings.h"
 #include "nandroid.h"
@@ -213,6 +213,8 @@ Value* RestoreFn(const char* name, State* state, int argc, Expr* argv[]) {
             restorecache = 0;
         else if (strcmp(args2[i], "nosd-ext") == 0)
             restoresdext = 0;
+        else if (strcmp(args2[i], "nomd5") == 0)
+            enable_md5sum.value = 0;
     }
     
     for (i = 0; i < argc; ++i) {

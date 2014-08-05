@@ -54,7 +54,7 @@
 #include "minui/minui.h"
 #include "minzip/DirUtil.h"
 #include "roots.h"
-#include "recovery.h"
+#include "recovery_ui.h"
 #include "ui.h"
 #include "extendedcommands.h"
 #include "advanced_functions.h"
@@ -167,7 +167,7 @@ int force_wait = -1;
 //  * one key (KEY_LEFTBRACE) will handle all gesture defined movements
 //  * the int key_gesture is assigned the touch gesture code (SLIDE_LEFT_GESTURE, SLIDE_RIGHT_GESTURE or DOUBLE_TAP_GESTURE)
 // in the active menu, get_menu_selection() / ui_wait_key() stop watching for a key as it detected KEY_LEFTBRACE
-// ui_handle_key() calls device_handle_key() in philz_keys_s2.c, and KEY_LEFTBRACE will return GESTURE_ACTIONS code (defined in recovery.h)
+// ui_handle_key() calls device_handle_key() in philz_keys_s2.c, and KEY_LEFTBRACE will return GESTURE_ACTIONS code (defined in recovery_ui.h)
 // back to recovery.c / get_menu_selection(), action = GESTURE_ACTIONS will launch handle_gesture_actions() and set chosen_item = GESTURE_ACTIONS
 // handle_gesture_actions() is launched while menu is still showing on screen, since ui_end_menu() was not yet called
 // handle_gesture_actions() will read key_gesture value assigned above and run the action associated to the gesture
@@ -1310,6 +1310,7 @@ static void browse_background_image() {
 
     free(list[4]);
     if (extra_paths != NULL) {
+        free_string_array(extra_paths);
         for(i = 0; i < num_extra_volumes; i++)
             free(list[i + list_top_items]);
     }
@@ -1488,7 +1489,8 @@ static void fb2png_shot() {
         sd_path = get_primary_storage_path();
 
     if (ensure_path_mounted(sd_path) != 0) {
-        ui_print("Found no mountable storage to save screen shots.\n");
+        ui_print("no mountable storage to save screen shots.\n");
+        free_string_array(extra_paths);
         return;
     }
 
@@ -1521,6 +1523,7 @@ static void fb2png_shot() {
     } else {
         ui_print("screen capture failed\n");
     }
+    free_string_array(extra_paths);
 }
 
 // Touch gesture actions
@@ -2632,14 +2635,14 @@ static int make_update_zip(const char* source_path, const char* target_volume) {
     sprintf(cmd, "mkdir -p %s/META-INF/com/google/android", tmp_path);
     __system(cmd);
 
-    if (NULL == source_path) {
+    if (source_path == NULL) {
         // create a nandroid backup from existing ROM and use it for update.zip
         backup_recovery = 0, backup_wimax = 0, backup_data = 0, backup_cache = 0, backup_sdext = 0;
         nandroid_force_backup_format("tar");
         ret = nandroid_backup(tmp_path);
         nandroid_force_backup_format("");
         backup_recovery = 1, backup_wimax = 1, backup_data = 1, backup_cache = 1, backup_sdext = 1;
-        if (0 != ret) {
+        if (ret != 0) {
             LOGE("Error while creating a nandroid image!\n");
             return ret;
         }
@@ -2663,7 +2666,7 @@ static int make_update_zip(const char* source_path, const char* target_volume) {
     ensure_path_unmounted("/system");
 
     //restore nandroid backup source folder
-    if (!(NULL == source_path)) {
+    if (source_path != NULL) {
         sprintf(cmd, "cd %s; mv boot.* system.* preload.* %s", tmp_path, source_path);
         __system(cmd);
     }
@@ -2672,7 +2675,7 @@ static int make_update_zip(const char* source_path, const char* target_volume) {
     sprintf(cmd, "rm -rf '%s'", tmp_path);
     __system(cmd);
 
-    if (0 != ret) {
+    if (ret != 0) {
         return print_and_error("Error while making a zip image!\n", ret);
     }
 
@@ -2710,6 +2713,7 @@ static void custom_rom_target_volume(const char* source_path) {
 
     free(list[0]);
     if (extra_paths != NULL) {
+        free_string_array(extra_paths);
         for(i = 0; i < num_extra_volumes; i++)
             free(list[i + 1]);
     }
@@ -2774,6 +2778,7 @@ static void choose_nandroid_menu() {
 out:
     free(list[0]);
     if (extra_paths != NULL) {
+        free_string_array(extra_paths);
         for(i = 0; i < num_extra_volumes; i++)
             free(list[i + 1]);
     }

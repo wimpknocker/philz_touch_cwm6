@@ -181,18 +181,18 @@ static void load_volume_table_extra() {
     fs_mgr_free_fstab(fstab_extra);
     fstab_extra = fs_mgr_read_fstab("/etc/extra.fstab");
     if (!fstab_extra) {
-        fprintf(stderr, "No /etc/extra.fstab\n");
+        printf("No /etc/extra.fstab\n");
         return;
     }
 
-    fprintf(stderr, "\nextra filesystem table: (device2, fstype2, options2):\n");
-    fprintf(stderr,   "======================\n");
+    printf("\nextra filesystem table: (device2, fstype2, options2):\n");
+    printf(  "======================\n");
     for(i = 0; i < fstab_extra->num_entries; ++i) {
         Volume* v = &fstab_extra->recs[i];
-        fprintf(stderr, "  %d %s %s %s %lld\n", i, v->mount_point, v->fs_type,
+        printf("  %d %s %s %s %lld\n", i, v->mount_point, v->fs_type,
                 v->blk_device, v->length);
     }
-    fprintf(stderr, "\n");
+    printf("\n");
 }
 
 Volume* volume_for_path_extra(const char* path) {
@@ -202,23 +202,25 @@ Volume* volume_for_path_extra(const char* path) {
 
 static void write_fstab_entry(Volume *v, FILE *file)
 {
-    if (v == NULL || file == NULL)
+    if (v == NULL || file == NULL || strcmp(v->fs_type, "ramdisk") == 0)
         return;
 
     // detect MTD/EMMC devices by name. BML devices won't be auto detected and we need the proper blk device in recovery.fstab!
     // mtdutils.c/cmd_bml_get_partition_device() always returns -1
     char device[200];
-    if (strncmp(v->blk_device, "/", 1) != 0 && get_partition_device(v->blk_device, device) != 0) {
-        fprintf(stderr, "    invalid device, skipping /etc/fstab entry\n");
-        return;
+    if (strncmp(v->blk_device, "/", 1) != 0) {
+        if (get_partition_device(v->blk_device, device) != 0) {
+            printf("    invalid device: skipping /etc/fstab entry\n");
+            return;
+        }
     } else {
         strcpy(device, v->blk_device);
     }
 
-    if (strcmp(v->fs_type, "mtd") != 0 && strcmp(v->fs_type, "emmc") != 0
-                  && strcmp(v->fs_type, "bml") != 0 && !fs_mgr_is_voldmanaged(v)
-                  && strncmp(device, "/", 1) == 0
-                  && strncmp(v->mount_point, "/", 1) == 0) {
+    if (strcmp(v->fs_type, "emmc") != 0 && 
+            !fs_mgr_is_voldmanaged(v) &&
+            strncmp(device, "/", 1) == 0 &&
+            strncmp(v->mount_point, "/", 1) == 0) {
 
         fprintf(file, "%s ", device);
         fprintf(file, "%s ", v->mount_point);
@@ -249,6 +251,57 @@ int is_data_media()
     return is_datamedia;
 }
 
+// is volume a physical primary storage ?
+int is_volume_primary_storage(Volume* v)
+{
+    if (v == NULL)
+        return 0;
+
+    // Static mount point /sdcard is primary storage, except when it's
+    // declared as datamedia
+    if (strcmp(v->mount_point, "/sdcard") == 0) {
+        if (strcmp(v->fs_type, "datamedia") == 0) {
+            return 0;
+        }
+        return 1;
+    }
+
+    // Static mount points beginning with /mnt/media_rw/sdcard are primary
+    // storage except when a non-zero digit follows (eg. sdcard[1-9])
+    if (strcmp(v->mount_point, "/mnt/media_rw/sdcard0") == 0 || strcmp(v->mount_point, "/mnt/media_rw/sdcard") == 0) {
+        return 1;
+    }
+
+    // Dynamic mount points which label begins with sdcard are primary storage
+    // except when a non-zero digit follows (eg. sdcard[1-9])
+    // load_volume_table() allows a custom moint point different from /storage/label
+    if (fs_mgr_is_voldmanaged(v)) {
+        if (strcmp(v->label, "sdcard0") == 0 || strcmp(v->label, "sdcard") == 0)
+            return 1;
+    }
+
+    return 0;
+}
+
+// check if the volume is used as secondary storage
+// we also allow voldmanaged usb volumes
+int is_volume_extra_storage(Volume* v) {
+    if (strcmp(v->mount_point, get_primary_storage_path()) == 0)
+        return 0;
+
+    if (strcmp(v->mount_point, "/external_sd") == 0 ||
+            strncmp(v->mount_point, "/mnt/media_rw/sdcard", 20) == 0) {
+        return 1;
+    }
+
+    // load_volume_table() allows a custom moint point different from /storage/label
+    if (fs_mgr_is_voldmanaged(v)) {
+        return 1;
+    }
+
+    return 0;
+}
+
 void load_volume_table()
 {
     int i;
@@ -257,13 +310,13 @@ void load_volume_table()
     fs_mgr_free_fstab(fstab);
     fstab = fs_mgr_read_fstab("/etc/recovery.fstab");
     if (!fstab) {
-        fprintf(stderr, "failed to read /etc/recovery.fstab\n");
+        printf("failed to read /etc/recovery.fstab\n");
         return;
     }
 
     ret = fs_mgr_add_entry(fstab, "/tmp", "ramdisk", "ramdisk", 0);
     if (ret < 0 ) {
-        fprintf(stderr, "failed to add /tmp entry to fstab\n");
+        printf("failed to add /tmp entry to fstab\n");
         fs_mgr_free_fstab(fstab);
         fstab = NULL;
         return;
@@ -276,16 +329,16 @@ void load_volume_table()
         Volume* v = &fstab->recs[i];
 
         // Process vold-managed volumes with mount point "auto"
+        // we also allow a custom moint point different from /storage/label
+        // https://source.android.com/devices/tech/storage/config-example.html
         if (fs_mgr_is_voldmanaged(v) && strcmp(v->mount_point, "auto") == 0) {
             char path[PATH_MAX];
-
-            // Set the mount point to /storage/label which as used by vold
             snprintf(path, PATH_MAX, "/storage/%s", v->label);
             free(v->mount_point);
             v->mount_point = strdup(path);
         }
 
-        // get blk_device2, fstype_2 and fs_options2 if it exists
+        // get blk_device2, fstype_2 and fs_options2 if they exist
         add_extra_fstab_entries(i);
     }
 
@@ -294,7 +347,7 @@ void load_volume_table()
     // if fstab entry matches the real device fs_type, do nothing
     // also skip vold managed devices as vold relies on the defined flags.
     // vold managed devices should be set to auto fstype for free formatting
-    fprintf(stderr, "checking ext4 <-> f2fs conversion...\n");
+    printf("checking ext4 <-> f2fs conversion...\n");
     for (i = 0; i < fstab->num_entries; ++i) {
         Volume* v = &fstab->recs[i];
 
@@ -339,17 +392,17 @@ void load_volume_table()
                         v->fs_options = NULL;
                     }
                 }
-                fprintf(stderr, "  %s: %s -> %s\n", v->mount_point, fstab_fstype, v->fs_type);
+                printf("  %s: %s -> %s\n", v->mount_point, fstab_fstype, v->fs_type);
                 free(fstab_fstype);
             }
         }
     }
-    fprintf(stderr, "\n");
+    printf("\n");
 #endif
 
-    // Create a boring /etc/fstab so tools like Busybox mount work
+    // Create /etc/fstab so tools like Busybox mount work
     FILE *file;
-    file = fopen ("/etc/mtab","a");
+    file = fopen("/etc/mtab", "a");
     fclose(file);
     file = fopen("/etc/fstab", "w");
     if (file == NULL) {
@@ -370,14 +423,11 @@ void load_volume_table()
                     v->blk_device2, v->length);
         }
 
-        write_fstab_entry(v, file);
-
-        // https://source.android.com/devices/tech/storage/config-example.html
-        if (strcmp(v->mount_point, "/mnt/media_rw/sdcard0") == 0 ||
-                (strcmp(v->mount_point, "/sdcard") == 0 && strcmp(v->fs_type, "datamedia") != 0) ||
-                (fs_mgr_is_voldmanaged(v) && strcmp(v->label, "sdcard0") == 0)) {
+        if (is_volume_primary_storage(v)) {
             is_datamedia = 0;
         }
+
+        write_fstab_entry(v, file);
     }
 
     if (file != NULL)
@@ -386,56 +436,69 @@ void load_volume_table()
     printf("\n");
 }
 
-
 Volume* volume_for_path(const char* path) {
     return fs_mgr_get_entry_for_mount_point(fstab, path);
 }
 
-int is_primary_storage_voldmanaged() {
-    Volume* v;
-    v = volume_for_path("/storage/sdcard0");
-    return fs_mgr_is_voldmanaged(v);
-}
-
 static char* primary_storage_path = NULL;
 char* get_primary_storage_path() {
+    int i = 0;
     if (primary_storage_path == NULL) {
-        if (volume_for_path("/storage/sdcard0"))
-            primary_storage_path = "/storage/sdcard0";
-        else
-            primary_storage_path = "/sdcard";
+        primary_storage_path = "/sdcard";
+        for (i = 0; i < fstab->num_entries; ++i) {
+            Volume* v = &fstab->recs[i];
+            if (is_volume_primary_storage(v)) {
+                // one time malloc
+                primary_storage_path = strdup(v->mount_point);
+                break;
+            }
+        }
     }
     return primary_storage_path;
+}
+
+int is_primary_storage_voldmanaged() {
+    Volume* v = volume_for_path(get_primary_storage_path());
+    return fs_mgr_is_voldmanaged(v);
 }
 
 int get_num_extra_volumes() {
     int num = 0;
     int i;
-    for (i = 0; i < get_num_volumes(); i++) {
+    for (i = 0; i < get_num_volumes(); ++i) {
         Volume* v = get_device_volumes() + i;
-        if ((strcmp("/external_sd", v->mount_point) == 0) ||
-                ((strcmp(get_primary_storage_path(), v->mount_point) != 0) &&
-                fs_mgr_is_voldmanaged(v) && vold_is_volume_available(v->mount_point)))
+        if (is_volume_extra_storage(v)) {
+            if (fs_mgr_is_voldmanaged(v) && !vold_is_volume_available(v->mount_point))
+                continue;
+
             num++;
+        }
     }
     return num;
 }
 
 char** get_extra_storage_paths() {
-    int i = 0, j = 0;
-    static char* paths[MAX_NUM_MANAGED_VOLUMES];
+    char** paths = NULL;
     int num_extra_volumes = get_num_extra_volumes();
+    int i = 0, j = 0;
 
     if (num_extra_volumes == 0)
         return NULL;
 
-    for (i = 0; i < get_num_volumes(); i++) {
+    paths = (char**)malloc((num_extra_volumes + 1) * sizeof(char*));
+    if (paths == NULL) {
+        LOGE("get_extra_storage_paths: memory error\n");
+        return NULL;
+    }
+
+    for (i = 0; i < get_num_volumes(); ++i) {
         Volume* v = get_device_volumes() + i;
-        if ((strcmp("/external_sd", v->mount_point) == 0) ||
-                ((strcmp(get_primary_storage_path(), v->mount_point) != 0) &&
-                fs_mgr_is_voldmanaged(v) && vold_is_volume_available(v->mount_point))) {
-            paths[j] = v->mount_point;
-            j++;
+        if (is_volume_extra_storage(v)) {
+            if (fs_mgr_is_voldmanaged(v) && !vold_is_volume_available(v->mount_point))
+                continue;
+
+            paths[j] = strdup(v->mount_point);
+            ++j;
         }
     }
     paths[j] = NULL;
@@ -555,33 +618,29 @@ void setup_data_media(int mount) {
     if (mount) {
         int count = 0;
         int ret = -1;
-        preserve_data_media(0);
         while (count < 5 && ret != 0) {
             ret = ensure_path_unmounted("/data");
             usleep(500000);
             ++count;
         }
-        preserve_data_media(1);
         if (ret != 0)
             LOGE("could not unmount /data after /data/media setup\n");
     }
-/*
-    // debug
-    if (ui_should_log_stdout())
-        LOGI("using %s for %s\n", path, mount_point);
-*/
 }
 
+// handle /sdcard/ path when not defined in recovery.fstab
 int is_data_media_volume_path(const char* path) {
+    if (!is_data_media())
+        return 0;
+
     Volume* v = volume_for_path(path);
     if (v != NULL)
         return strcmp(v->fs_type, "datamedia") == 0;
 
-    if (!is_data_media()) {
-        return 0;
-    }
+    if (strcmp(path, "/sdcard") == 0 || strncmp(path, "/sdcard/", 8) == 0)
+        return 1;
 
-    return strcmp(path, "/sdcard") == 0 || path == strstr(path, "/sdcard/");
+    return 0;
 }
 
 static int ensure_path_mounted_always_true = 0;
@@ -685,13 +744,12 @@ int ensure_path_mounted_at_mount_point(const char* path, const char* mount_point
 
 // not thread safe because of scan_mounted_volumes()
 int ensure_path_unmounted(const char* path) {
+    // if we are using /data/media, do not unmount /sdcard until !is_data_media_preserved()
     if (is_data_media_volume_path(path)) {
-        return ensure_path_unmounted("/data");
-    }
-
-    // if we are using /data/media, do not unmount volumes /data or /sdcard until !is_data_media_preserved()
-    if (strstr(path, "/data") == path && is_data_media() && is_data_media_preserved()) {
-        return 0;
+        if (is_data_media_preserved())
+            return 0;
+        else
+            return ensure_path_unmounted("/data");
     }
 
     Volume* v = volume_for_path(path);
@@ -801,7 +859,7 @@ int format_volume(const char* volume) {
 
     // if we're formatting a path, this will act like 'rm -rf volume'
     if (strcmp(v->mount_point, volume) != 0) {
-        return format_unknown_device(v->blk_device, volume, NULL);
+        return format_unknown_device(NULL, volume, NULL);
     }
 
     // check to see if /data is being formatted, and if it is /data/media
@@ -899,6 +957,11 @@ int setup_install_mounts() {
     return 0;
 }
 
+/* by default: 
+    - do not unmount /data if user requests unmounting /sdcard
+    - do not format whole /data (include /data/media) when format /data is requested
+      instead, do rm -rf with /data/media excluded
+*/
 static int data_media_preserved_state = 1;
 void preserve_data_media(int val) {
     data_media_preserved_state = val;
@@ -909,9 +972,12 @@ int is_data_media_preserved() {
 }
 
 void setup_legacy_storage_paths() {
-    char* primary_path = get_primary_storage_path();
+    // sdcard symlink is done in setup_data_media()
+    if (is_data_media())
+        return;
 
-    if (!is_data_media_volume_path(primary_path)) {
+    char* primary_path = get_primary_storage_path();
+    if (strcmp(primary_path, "/sdcard") != 0) {
         rmdir("/sdcard");
         symlink(primary_path, "/sdcard");
     }
@@ -1031,7 +1097,7 @@ int format_unknown_device(const char *device, const char* path, const char *fs_t
         return erase_raw_partition(fs_type, device);
 
     // if this is SDEXT:, don't worry about it if it does not exist.
-    if (0 == strcmp(path, "/sd-ext")) {
+    if (strcmp(path, "/sd-ext") == 0) {
         struct stat st;
         Volume *vol = volume_for_path("/sd-ext");
         if (vol == NULL || 0 != stat(vol->blk_device, &st)) {
@@ -1116,14 +1182,14 @@ char* get_real_fstype(const char* path) {
 
     Volume* vol = volume_for_path(path);
     if (vol == NULL) {
-        fprintf(stderr, "  get_real_fstype: volume not found (%s).\n", path);
+        printf("  get_real_fstype: volume not found (%s).\n", path);
         return NULL;
     }
 
     sprintf(cmd, "/sbin/blkid -c /dev/null %s", vol->blk_device);
     FILE *fp = __popen(cmd, "r");
     if (fp == NULL) {
-        fprintf(stderr, "  get_real_fstype: blkid error\n");
+        printf("  get_real_fstype: blkid error\n");
         return NULL;
     }
 
@@ -1134,7 +1200,7 @@ char* get_real_fstype(const char* path) {
     }
     __pclose(fp);
     if (real_device_fstype == NULL)
-        fprintf(stderr, "  get_real_fstype: unknown filesystem (%s)\n", path);
+        printf("  get_real_fstype: unknown filesystem (%s)\n", path);
 
     return real_device_fstype;
 }

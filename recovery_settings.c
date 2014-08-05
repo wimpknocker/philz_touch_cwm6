@@ -12,7 +12,7 @@
 #include "common.h"
 #include "install.h"
 #include "roots.h"
-#include "recovery.h"
+#include "recovery_ui.h"
 #include "extendedcommands.h"
 #include "advanced_functions.h"
 #include "recovery_settings.h"
@@ -326,6 +326,7 @@ void refresh_recovery_settings(int on_start) {
     refresh_touch_gui_settings(on_start);
 #endif
     // unmount settings file on recovery start
+    // keep preserve_data_media() if we ever move settings file to /sdcard
     if (on_start) {
         preserve_data_media(0);
         ensure_path_unmounted(PHILZ_SETTINGS_FILE);
