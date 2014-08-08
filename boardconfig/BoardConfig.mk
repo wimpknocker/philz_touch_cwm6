@@ -376,6 +376,7 @@ else ifneq ($(filter $(TARGET_PRODUCT),cm_t0lte cm_t0lteatt cm_t0ltetmo cm_l900 
     TARGET_SCREEN_WIDTH := 720
     BRIGHTNESS_SYS_FILE := "/sys/class/backlight/panel/brightness"
     BOARD_USE_B_SLOT_PROTOCOL := true
+    ENABLE_BLACKHAWK_PATCH := true
 
 #Galaxy Note 3 LTE - N9005 Unified (hlte): hltexx, hltespr, hltetmo, hltecan, hltevzw
 else ifeq ($(TARGET_PRODUCT), cm_hlte)
