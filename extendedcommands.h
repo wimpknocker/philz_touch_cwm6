@@ -102,4 +102,8 @@ struct extra_partitions_list {
     int backup_state;
 } extra_partition[MAX_EXTRA_NANDROID_PARTITIONS];
 
+#ifdef ENABLE_BLACKHAWK_PATCH
+int is_second_recovery();
+#endif
+
 #endif // __ADVANCED_FUNCTIONS_H

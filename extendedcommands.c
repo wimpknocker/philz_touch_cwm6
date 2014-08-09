@@ -3997,7 +3997,7 @@ static void get_mnt_fmt_capabilities(MFMatrix *mfm) {
 }
 
 #ifdef ENABLE_BLACKHAWK_PATCH
-static int is_second_recovery() {
+int is_second_recovery() {
     static char path[PATH_MAX];
     sprintf(path, "/data/media/.defaultrecovery");
     int ret = 0;
@@ -4222,12 +4222,6 @@ int show_partition_mounts_menu() {
             MountMenuEntry* e = &mount_menu[chosen_item];
 
             if (is_path_mounted(e->path)) {
-#ifdef ENABLE_BLACKHAWK_PATCH
-                if (strcmp(e->path, "/data") == 0 && is_second_recovery()) {
-                    ui_print("/data locked in 2nd recovery!\n");
-                    continue;
-                }
-#endif
                 preserve_data_media(0);
                 if (0 != ensure_path_unmounted(e->path))
                     LOGE("Error unmounting %s!\n", e->path);

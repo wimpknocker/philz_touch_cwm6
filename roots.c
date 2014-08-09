@@ -758,6 +758,13 @@ int ensure_path_unmounted(const char* path) {
         return -1;
     }
 
+#ifdef ENABLE_BLACKHAWK_PATCH
+    if (strcmp(v->mount_point, "/data") == 0 && is_second_recovery()) {
+        LOGI("/data locked in 2nd recovery!\n");
+        return 0;
+    }
+#endif
+
     if (strcmp(v->fs_type, "ramdisk") == 0) {
         // the ramdisk is always mounted; you can't unmount it.
         return -1;
