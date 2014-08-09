@@ -322,7 +322,7 @@ static void check_menu_height() {
 static void check_scroll_sensitivity() {
     char value[PROPERTY_VALUE_MAX];
     char value_def[5];
-    sprintf (value_def, "%d", SCROLL_SENSITIVITY_0);
+    sprintf (value_def, "%ld", SCROLL_SENSITIVITY_0);
     read_config_file(PHILZ_SETTINGS_FILE, scroll_sensitivity.key, value, value_def);
     scroll_sensitivity.value = strtol(value, NULL, 10);
     if (scroll_sensitivity.value < SCROLL_SENSITIVITY_MIN || scroll_sensitivity.value > SCROLL_SENSITIVITY_MAX)
@@ -2255,8 +2255,8 @@ void show_touch_gui_menu() {
             ui_format_gui_menu(item_touch, "Touch GUI", "Full");
 
         if (menu_height_increase.value == MENU_HEIGHT_INCREASE_0)
-            sprintf(tmp, "%ld (default)", menu_height_increase.value);
-        else sprintf(tmp, "%ld (custom)", menu_height_increase.value);
+            sprintf(tmp, "%ld (default)", MENU_HEIGHT_TOTAL);
+        else sprintf(tmp, "%ld (custom)", MENU_HEIGHT_TOTAL);
         ui_format_gui_menu(item_height, "Menu Height", tmp);
 
         if (scroll_sensitivity.value == SCROLL_SENSITIVITY_0)
@@ -2356,7 +2356,7 @@ void show_touch_gui_menu() {
                         sprintf (value, "%d", MENU_HEIGHT_INCREASE_0);
                         write_config_file(PHILZ_SETTINGS_FILE, menu_height_increase.key, value);
                         write_config_file(PHILZ_SETTINGS_FILE, show_virtual_keys.key, "1");
-                        sprintf (value, "%d", SCROLL_SENSITIVITY_0);
+                        sprintf (value, "%ld", SCROLL_SENSITIVITY_0);
                         write_config_file(PHILZ_SETTINGS_FILE, scroll_sensitivity.key, value);
                     } else if (touch_to_validate.value == NO_TOUCH_SUPPORT) {
                         // hide recovery virtual keys by default in this mode since they are not used
