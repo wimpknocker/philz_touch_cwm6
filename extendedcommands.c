@@ -4220,7 +4220,6 @@ int show_partition_mounts_menu() {
             MountMenuEntry* e = &mount_menu[chosen_item];
 
             if (is_path_mounted(e->path)) {
-                preserve_data_media(0);
                 if (0 != ensure_path_unmounted(e->path))
                     LOGE("Error unmounting %s!\n", e->path);
             } else {
