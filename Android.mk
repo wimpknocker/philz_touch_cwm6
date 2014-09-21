@@ -330,6 +330,10 @@ include $(commands_recovery_local_path)/libtouch_gui/Android.mk
 endif
 endif
 
+ifeq ($(ENABLE_BLACKHAWK_PATCH),true)
+    include $(commands_recovery_local_path)/sparse_ext4/Android.mk
+endif
+
 ifneq ($(BOARD_HAS_NO_FB2PNG),true)
     include $(commands_recovery_local_path)/fb2png/Android.mk
 endif
