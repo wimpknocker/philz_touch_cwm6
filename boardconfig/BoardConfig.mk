@@ -145,6 +145,7 @@ else ifeq ($(TARGET_DEVICE), skomer)
     BOARD_HAS_LOW_RESOLUTION := true
     BRIGHTNESS_SYS_FILE := "/sys/class/backlight/panel/brightness"
     BOARD_USE_B_SLOT_PROTOCOL := true
+    ENABLE_BLACKHAWK_PATCH := true
 
 #Galaxy S3 Mini - golden
 else ifeq ($(TARGET_DEVICE), golden)
